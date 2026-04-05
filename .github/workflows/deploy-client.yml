@@ -18,9 +18,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
         working-directory: client
@@ -37,4 +37,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: client/dist
-          cname: ''
+          cname: '
