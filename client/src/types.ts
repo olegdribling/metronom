@@ -1,6 +1,6 @@
 export type User = { id: number; email: string }
 
-export type ThemeKey = 'purple' | 'gray'
+export type ThemeKey = 'purple' | 'gray' | 'light'
 
 export interface PatternTrack {
   id: string
