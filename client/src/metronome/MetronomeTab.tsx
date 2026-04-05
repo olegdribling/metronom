@@ -93,7 +93,7 @@ export function MetronomeTab({
             <button
               key={delta}
               onClick={() => changeBpm(delta)}
-              className={`py-2 rounded-2xl text-sm text-slate-300 ${theme.btn}`}
+              className={`py-2 rounded-2xl text-sm ${theme.btn}`}
             >
               {delta > 0 ? `+${delta}` : delta}
             </button>
