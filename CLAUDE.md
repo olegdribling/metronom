@@ -182,9 +182,9 @@ export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh"
 Файл: `client/src/theme.ts`
 Типы: `client/src/types.ts` → `ThemeKey = 'purple' | 'gray' | 'light'`
 
-Правило: никогда не хардкодить цвета (`text-white`, `bg-slate-800` и т.д.) прямо в компонентах. Все цвета — через `theme.*` из `useTheme()`. Проверять командой:
+Правило: никогда не хардкодить цвета (`text-white`, `text-slate-*`, `bg-slate-*`, `bg-violet-*` и т.д.) прямо в компонентах. Все цвета — через `theme.*` из `useTheme()`. Это касается ВСЕХ элементов: кнопок, текста, фонов, бордеров. После любых изменений проверять командой:
 ```bash
-grep -rn "text-white\|text-slate\|bg-slate\|bg-violet" client/src/metronome/
+grep -rn "text-white\|text-slate\|text-gray-[0-9]\|bg-slate\|bg-violet\|bg-rose" client/src/metronome/
 ```
 
 ### Аудио движок
