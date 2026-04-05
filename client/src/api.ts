@@ -1,6 +1,6 @@
 import type { User, Song } from './types'
 
-const API_URL = import.meta.env.VITE_API_URL || ''
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 const getToken = () => localStorage.getItem('tt_token') || ''
 const getRefreshToken = () => localStorage.getItem('tt_refresh_token') || ''
@@ -26,7 +26,7 @@ async function doRefresh(): Promise<string | null> {
     return null
   }
   try {
-    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -67,7 +67,7 @@ async function fetchAuth(url: string, options: RequestInit = {}): Promise<Respon
 export const api = {
   // ── Auth ──
   async register(email: string, password: string) {
-    const res = await fetch(`${API_URL}/api/auth/register`, {
+    const res = await fetch(`${BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -76,7 +76,7 @@ export const api = {
   },
 
   async login(email: string, password: string) {
-    const res = await fetch(`${API_URL}/api/auth/login`, {
+    const res = await fetch(`${BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -85,7 +85,7 @@ export const api = {
   },
 
   async forgotPassword(email: string) {
-    const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
+    const res = await fetch(`${BASE_URL}/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -94,7 +94,7 @@ export const api = {
   },
 
   async resetPassword(token: string, password: string) {
-    const res = await fetch(`${API_URL}/api/auth/reset-password`, {
+    const res = await fetch(`${BASE_URL}/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, password }),
@@ -103,14 +103,14 @@ export const api = {
   },
 
   async me(): Promise<User> {
-    const res = await fetchAuth(`${API_URL}/api/auth/me`)
+    const res = await fetchAuth(`${BASE_URL}/auth/me`)
     return res.json()
   },
 
   async logout() {
     const refreshToken = getRefreshToken()
     clearTokens()
-    await fetch(`${API_URL}/api/auth/logout`, {
+    await fetch(`${BASE_URL}/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -119,13 +119,13 @@ export const api = {
 
   // ── Songs ──
   async getSongs(): Promise<Song[]> {
-    const res = await fetchAuth(`${API_URL}/api/songs`)
+    const res = await fetchAuth(`${BASE_URL}/songs`)
     if (!res.ok) return []
     return res.json()
   },
 
   async saveSongs(songs: Song[]): Promise<void> {
-    await fetchAuth(`${API_URL}/api/songs`, {
+    await fetchAuth(`${BASE_URL}/songs`, {
       method: 'PUT',
       body: JSON.stringify(songs),
     })
