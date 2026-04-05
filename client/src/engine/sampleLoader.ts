@@ -15,7 +15,7 @@ export function useSampleLoader(audioContextRef: React.MutableRefObject<AudioCon
     if (sampleDataRef.current[instrumentId]) {
       return Promise.resolve(sampleDataRef.current[instrumentId])
     }
-    if (sampleFetchPromisesRef.current[instrumentId]) {
+    if (sampleFetchPromisesRef.current[instrumentId] != null) {
       return sampleFetchPromisesRef.current[instrumentId]
     }
     const samplePath = instrumentMetaById[instrumentId]?.sample
@@ -46,7 +46,7 @@ export function useSampleLoader(audioContextRef: React.MutableRefObject<AudioCon
     if (sampleBufferRef.current[instrumentId]) {
       return sampleBufferRef.current[instrumentId]
     }
-    if (sampleDecodePromisesRef.current[instrumentId]) {
+    if (sampleDecodePromisesRef.current[instrumentId] != null) {
       return sampleDecodePromisesRef.current[instrumentId]
     }
     if (!audioContextRef.current) return null
