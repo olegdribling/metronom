@@ -57,7 +57,7 @@ export function SongDetail({
   const theme = useTheme()
 
   return (
-    <div className={`p-5 w-full max-w-xl mb-32 ${theme.card}`}>
+    <div className={`p-5 w-full max-w-xl mb-32 min-h-[calc(100vh-180px)] ${theme.card}`}>
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold truncate flex-1">{currentSong.name}</h2>

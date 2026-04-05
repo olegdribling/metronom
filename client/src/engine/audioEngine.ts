@@ -10,6 +10,9 @@ const totalBars = (song: Song) =>
   song.sections.reduce((s, sec) => s + sec.bars, 0)
 
 export function useAudioEngine(bpm: number, currentSong: Song | null, voiceCues = false) {
+  const voiceCuesRef = useRef(voiceCues)
+  useEffect(() => { voiceCuesRef.current = voiceCues }, [voiceCues])
+
   const audioContextRef = useRef<AudioContext | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const nextNoteTimeRef = useRef(0)
@@ -122,7 +125,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null, voiceCues 
       const nextSection = hasNextSection ? currentSong!.sections[sectionIdx + 1] : null
       const nextSectionName = nextSection ? nextSection.name : (sectionIdx >= 0 ? 'END' : null)
 
-      if (voiceCues && isLastBarOfSection) {
+      if (voiceCuesRef.current && isLastBarOfSection) {
         if (currentBeatValue === 1) {
           playInstrumentSound(`voice_${nextSectionName}`, scheduledTime)
         } else {
