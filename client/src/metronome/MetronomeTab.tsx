@@ -49,7 +49,7 @@ export function MetronomeTab({
           <div className="relative">
             <button
               onClick={() => setShowPicker(v => !v)}
-              className={`w-10 h-10 rounded-xl font-bold text-lg transition ${theme.btn} text-white`}
+              className={`w-10 h-10 rounded-xl font-bold text-lg transition ${theme.btn}`}
             >
               {beatsPerBar}
             </button>
@@ -73,7 +73,7 @@ export function MetronomeTab({
 
         {/* BPM display */}
         <div className="text-center mb-4">
-          <span className="text-5xl font-black text-white">{bpm}</span>
+          <span className={`text-5xl font-black ${theme.text}`}>{bpm}</span>
           <span className={`ml-2 text-lg ${theme.textSub}`}>BPM</span>
         </div>
 

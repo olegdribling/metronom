@@ -82,7 +82,7 @@ export function SectionCard({
       </div>
 
       {section.comment && (
-        <div className="text-white/90 font-bold text-lg mt-1 mb-2">{section.comment}</div>
+        <div className={`font-bold text-lg mt-1 mb-2 ${theme.text}`}>{section.comment}</div>
       )}
 
       {/* Beat grid */}
