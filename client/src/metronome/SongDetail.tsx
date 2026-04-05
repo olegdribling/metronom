@@ -70,7 +70,7 @@ export function SongDetail({
       </div>
 
       {/* Sections */}
-      <div className="space-y-3 mb-4 max-h-[50vh] overflow-y-auto pr-1">
+      <div className="space-y-3 mb-4">
         {currentSong.sections.map((sec, i) => (
           <SectionCard
             key={i}
