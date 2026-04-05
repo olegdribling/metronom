@@ -36,13 +36,13 @@ export function PatternEditor({
           <div className="flex gap-3">
             <button
               onClick={onClear}
-              className={`px-4 py-2 rounded-xl ${theme.btn} text-slate-300`}
+              className={`px-4 py-2 rounded-xl ${theme.btn}`}
             >
               Очистить
             </button>
             <button
               onClick={onClose}
-              className={`px-4 py-2 rounded-xl font-bold ${theme.btnAccent} text-white`}
+              className={`px-4 py-2 rounded-xl font-bold ${theme.btnAccent}`}
             >
               Готово
             </button>
