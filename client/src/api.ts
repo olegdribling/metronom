@@ -1,6 +1,6 @@
 import type { User, Song } from './types'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const BASE_URL = '/api'
 
 const getToken = () => localStorage.getItem('tt_token') || ''
 const getRefreshToken = () => localStorage.getItem('tt_refresh_token') || ''
