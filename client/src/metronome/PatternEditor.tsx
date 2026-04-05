@@ -80,7 +80,6 @@ export function PatternEditor({
             ))}
           </div>
         </div>
-        </div>
       </div>
     </div>
   )
