@@ -89,7 +89,7 @@ export function MetronomeApp() {
   const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null)
   const [editSectionData, setEditSectionData] = useState<SectionFormData>({ name: 'VERSE', bars: 4, comment: '' })
 
-  const [bpm, setBpm] = useState(CONFIG.DEFAULT_BPM)
+  const [bpm, setBpm] = useState<number>(CONFIG.DEFAULT_BPM)
   const [showPatternEditor, setShowPatternEditor] = useState(false)
 
   const currentSectionRef = useRef<HTMLDivElement | null>(null)
