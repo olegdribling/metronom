@@ -28,10 +28,10 @@ export function PatternEditor({
 
   return (
     <div className={`min-h-screen p-4 ${theme.page}`}>
-      <div className="max-w-4xl mx-auto">
+      <div className={`max-w-4xl mx-auto p-6 pb-4 ${theme.card}`}>
 
         {/* Toolbar */}
-        <div className={`flex items-center justify-between mb-4 p-4 ${theme.card}`}>
+        <div className="flex items-center justify-between mb-6">
           <span className={`text-sm font-medium ${theme.textSub}`}>{songName || 'Паттерн'}</span>
           <div className="flex gap-3">
             <button
@@ -50,7 +50,7 @@ export function PatternEditor({
         </div>
 
         {/* Grid */}
-        <div className="overflow-auto">
+        <div className="overflow-auto pb-1">
           <div className="grid gap-2 items-center" style={gridTemplate}>
             <div />
             {headerCells.map(cell => (
@@ -79,6 +79,7 @@ export function PatternEditor({
               </div>
             ))}
           </div>
+        </div>
         </div>
       </div>
     </div>
