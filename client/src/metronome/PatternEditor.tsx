@@ -50,7 +50,7 @@ export function PatternEditor({
         </div>
 
         {/* Grid */}
-        <div className="overflow-auto pb-1">
+        <div className="overflow-auto pb-3">
           <div className="grid gap-2 items-center" style={gridTemplate}>
             <div />
             {headerCells.map(cell => (
