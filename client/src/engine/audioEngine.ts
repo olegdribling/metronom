@@ -9,7 +9,7 @@ const patternHasActiveSteps = (pattern: any) =>
 const totalBars = (song: Song) =>
   song.sections.reduce((s, sec) => s + sec.bars, 0)
 
-export function useAudioEngine(bpm: number, currentSong: Song | null) {
+export function useAudioEngine(bpm: number, currentSong: Song | null, voiceCues = false) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const nextNoteTimeRef = useRef(0)
@@ -21,7 +21,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [beatsPerBar, setBeatsPerBar] = useState(4)
-  const [playbackState, setPlaybackState] = useState<PlaybackState>({ beat: 1, bar: 0, patternStep: 0 })
+  const [playbackState, setPlaybackState] = useState<PlaybackState>({ beat: 1, bar: 0, patternStep: 0, nextSectionName: null })
 
   const {
     sampleBufferRef,
@@ -118,11 +118,16 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
         r => currentBarValue >= r.start && currentBarValue <= r.end
       )
       const isLastBarOfSection = sectionIdx >= 0 && currentBarValue === sectionRanges[sectionIdx].end
-      const hasNextSection = sectionIdx >= 0 && sectionIdx < sectionRanges.length - 1
-      const shouldPlayVoice = isLastBarOfSection && hasNextSection
+      const hasNextSection = sectionIdx >= 0 && sectionIdx < (currentSong?.sections.length ?? 0) - 1
+      const nextSection = hasNextSection ? currentSong!.sections[sectionIdx + 1] : null
+      const nextSectionName = nextSection ? nextSection.name : (sectionIdx >= 0 ? 'END' : null)
 
-      if (shouldPlayVoice) {
-        playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+      if (voiceCues && isLastBarOfSection) {
+        if (currentBeatValue === 1) {
+          playInstrumentSound(`voice_${nextSectionName}`, scheduledTime)
+        } else {
+          playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+        }
       }
 
       if (usePatternSounds && patternLength > 0) {
@@ -146,6 +151,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
             beat: currentBeatValue,
             bar: currentBarValue,
             patternStep: stepIndex,
+            nextSectionName,
           })
         }
       } else {
@@ -155,6 +161,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
           beat: currentBeatValue,
           bar: currentBarValue,
           patternStep: 0,
+          nextSectionName,
         })
         clickSound(scheduledTime, currentBeatValue === 1)
       }
@@ -189,7 +196,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
     setIsPlaying(true)
     beatRef.current = 1
     barRef.current = 0
-    setPlaybackState({ beat: 1, bar: 0, patternStep: 0 })
+    setPlaybackState({ beat: 1, bar: 0, patternStep: 0, nextSectionName: null })
     visualQueueRef.current = []
     nextNoteTimeRef.current = audioContextRef.current.currentTime + 0.1
     schedule()
@@ -200,7 +207,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     if (visualRafRef.current) { cancelAnimationFrame(visualRafRef.current); visualRafRef.current = null }
     visualQueueRef.current = []
-    setPlaybackState({ beat: 1, bar: 0, patternStep: 0 })
+    setPlaybackState({ beat: 1, bar: 0, patternStep: 0, nextSectionName: null })
   }, [])
 
   // Visual RAF loop
@@ -216,7 +223,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
       while (visualQueueRef.current.length && visualQueueRef.current[0].time <= now) {
         const event = visualQueueRef.current.shift()
         if (event.type === 'stop') {
-          setPlaybackState({ beat: 1, bar: 0, patternStep: 0 })
+          setPlaybackState({ beat: 1, bar: 0, patternStep: 0, nextSectionName: null })
           setIsPlaying(false)
           if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
           visualQueueRef.current = []
@@ -227,6 +234,7 @@ export function useAudioEngine(bpm: number, currentSong: Song | null) {
           beat: event.beat,
           bar: event.bar,
           patternStep: typeof event.patternStep === 'number' ? event.patternStep : 0,
+          nextSectionName: event.nextSectionName ?? null,
         })
       }
       visualRafRef.current = requestAnimationFrame(processVisuals)

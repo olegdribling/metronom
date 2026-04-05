@@ -28,6 +28,23 @@ export const VOICE_SAMPLES = [
   { id: 'voice_2', sample: 'sound/Voices/number_2.wav' },
   { id: 'voice_3', sample: 'sound/Voices/number_3.wav' },
   { id: 'voice_4', sample: 'sound/Voices/number_4.wav' },
+  { id: 'voice_5', sample: 'sound/Voices/number_5.wav' },
+  { id: 'voice_6', sample: 'sound/Voices/number_6.wav' },
+  { id: 'voice_7', sample: 'sound/Voices/number_7.wav' },
+  { id: 'voice_8', sample: 'sound/Voices/number_8.wav' },
+]
+
+export const SECTION_VOICE_SAMPLES = [
+  { id: 'voice_INTRO',      sample: 'sound/Voices/intro.wav' },
+  { id: 'voice_VERSE',      sample: 'sound/Voices/verse.wav' },
+  { id: 'voice_PRECHORUS',  sample: 'sound/Voices/prechorus.wav' },
+  { id: 'voice_CHORUS',     sample: 'sound/Voices/chorus.wav' },
+  { id: 'voice_POSTCHORUS', sample: 'sound/Voices/postchorus.wav' },
+  { id: 'voice_BRIDGE',     sample: 'sound/Voices/bridge.wav' },
+  { id: 'voice_SOLO',       sample: 'sound/Voices/solo.wav' },
+  { id: 'voice_OUTRO',      sample: 'sound/Voices/outro.wav' },
+  { id: 'voice_PAUSE',      sample: 'sound/Voices/pause.wav' },
+  { id: 'voice_END',        sample: 'sound/Voices/outro.wav' },
 ]
 
 export const CLICK_SAMPLES = [
@@ -40,7 +57,7 @@ export const SECTION_TYPES = [
   'BRIDGE', 'SOLO', 'OUTRO', 'PAUSE',
 ]
 
-export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...VOICE_SAMPLES, ...CLICK_SAMPLES]
+export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES, ...CLICK_SAMPLES]
 
 export const instrumentMetaById = ALL_INSTRUMENTS.reduce<Record<string, { id: string; sample?: string }>>((acc, inst) => {
   acc[inst.id] = inst

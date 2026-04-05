@@ -7,10 +7,12 @@ import { Icon } from './Icon'
 interface SettingsTabProps {
   themeId: ThemeKey
   setThemeId: (id: ThemeKey) => void
+  voiceCues: boolean
+  setVoiceCues: (v: boolean) => void
   onLogout: () => void
 }
 
-export function SettingsTab({ themeId, setThemeId, onLogout }: SettingsTabProps) {
+export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLogout }: SettingsTabProps) {
   const theme = useTheme()
   const [view, setView] = useState<'main' | 'theme'>('main')
 
@@ -63,6 +65,17 @@ export function SettingsTab({ themeId, setThemeId, onLogout }: SettingsTabProps)
           <span className="flex-1 text-left font-medium">Color scheme</span>
           <span className={`text-sm mr-2 ${theme.textSub}`}>{THEMES[themeId]._name}</span>
           <Icon name="caret-right" className={theme.textSub} />
+        </button>
+
+        <button
+          onClick={() => setVoiceCues(!voiceCues)}
+          className={`w-full flex items-center gap-3 p-4 transition ${theme.btn} border-0 rounded-none border-b ${theme.borderStrong}`}
+        >
+          <Icon name="microphone" className={`text-lg ${theme.textAccent}`} />
+          <span className="flex-1 text-left font-medium">Voice cues</span>
+          <div className={`w-10 h-6 rounded-full transition-colors ${voiceCues ? 'bg-violet-600' : 'bg-gray-400'} relative`}>
+            <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${voiceCues ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </div>
         </button>
 
         <div className={`w-full flex items-center gap-3 p-4 opacity-40 border-b ${theme.borderStrong}`}>

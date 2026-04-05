@@ -34,6 +34,7 @@ export interface PlaybackState {
   beat: number
   bar: number
   patternStep: number
+  nextSectionName: string | null
 }
 
 export interface SectionRange {

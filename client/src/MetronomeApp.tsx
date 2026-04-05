@@ -91,13 +91,16 @@ export function MetronomeApp() {
 
   const [bpm, setBpm] = useState<number>(CONFIG.DEFAULT_BPM)
   const [showPatternEditor, setShowPatternEditor] = useState(false)
+  const [voiceCues, setVoiceCues] = useState(() =>
+    localStorage.getItem('voiceCues') === 'true'
+  )
 
   const currentSectionRef = useRef<HTMLDivElement | null>(null)
 
   const {
     isPlaying, playbackState, beatsPerBar, setBeatsPerBar,
     samplesLoaded, start, stop,
-  } = useAudioEngine(bpm, currentSong)
+  } = useAudioEngine(bpm, currentSong, voiceCues)
 
   // Sync theme to body background
   useEffect(() => {
@@ -570,12 +573,17 @@ export function MetronomeApp() {
               setThemeId(id)
               localStorage.setItem('themeId', id)
             }}
+            voiceCues={voiceCues}
+            setVoiceCues={(v) => {
+              setVoiceCues(v)
+              localStorage.setItem('voiceCues', String(v))
+            }}
             onLogout={handleLogout}
           />
         )}
 
         {/* Fixed controls */}
-        {activeTab === 'metronome' && <PlaybackBar isPlaying={isPlaying} start={start} stop={stop} />}
+        {activeTab === 'metronome' && <PlaybackBar isPlaying={isPlaying} start={start} stop={stop} nextSectionName={playbackState.nextSectionName} />}
         {activeTab === 'songs' && currentSong !== null && (
           <SongControls
             bpm={bpm}
