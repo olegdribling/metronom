@@ -1,4 +1,4 @@
-name: Deploy Client to GitHub Pages
+name: Deploy Client to Hostinger
 
 on:
   push:
@@ -10,8 +10,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -30,11 +28,15 @@ jobs:
         working-directory: client
         run: npm run build
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_URL: ''
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Deploy to Hostinger
+        uses: appleboy/scp-action@v0.1.7
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: client/dist
-          cname: ''
+          host: 153.92.9.238
+          port: 65002
+          username: u673267555
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: 'client/dist/.'
+          target: /home/u673267555/domains/slateblue-crow-206906.hostingersite.com/public_html
+          strip_components: 2
