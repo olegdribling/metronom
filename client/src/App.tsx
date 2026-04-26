@@ -13,6 +13,7 @@ export function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/" element={<MetronomeApp />} />
 
       <Route path="/app" element={
         <ProtectedRoute>
@@ -20,8 +21,7 @@ export function App() {
         </ProtectedRoute>
       } />
 
-      <Route path="/" element={<Navigate to="/app" replace />} />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
