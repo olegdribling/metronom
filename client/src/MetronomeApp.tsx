@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import { useAudioEngine } from './engine/audioEngine'
 import { useSongs } from './hooks/useSongs'
@@ -8,15 +9,14 @@ import {
   TOUCH_DRAG_DELAY_MS,
 } from './config'
 import { Song, ThemeKey, SectionFormData, SectionRange } from './types'
-import { BottomNav } from './metronome/BottomNav'
-import { MetronomeTab } from './metronome/MetronomeTab'
-import { PlaybackBar } from './metronome/PlaybackBar'
-import { SongControls } from './metronome/SongControls'
-import { SongList } from './metronome/SongList'
-import { SongDetail } from './metronome/SongDetail'
-import { SettingsTab } from './metronome/SettingsTab'
+import { THEMES } from './theme'
 import { PatternEditor } from './metronome/PatternEditor'
 import { Icon } from './metronome/Icon'
+import { AppHeader } from './metronome/AppHeader'
+import { AppFooter } from './metronome/AppFooter'
+import { MetronomePage } from './pages/MetronomePage'
+import { SongsPage } from './pages/SongsPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -72,6 +72,9 @@ const totalBarsOf = (song: Song) => song.sections.reduce((s, sec) => s + sec.bar
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export function MetronomeApp() {
+  // Русский комментарий: используем роутер для переключения между отдельными страницами.
+  const location = useLocation()
+  const navigate = useNavigate()
   const { songs, save, syncError, pendingSave } = useSongs()
 
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
@@ -79,7 +82,6 @@ export function MetronomeApp() {
   const [editingSongId, setEditingSongId] = useState<number | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
-  const [activeTab, setActiveTab] = useState('metronome')
   const [themeId, setThemeId] = useState<ThemeKey>(() =>
     (localStorage.getItem('themeId') as ThemeKey) || 'purple'
   )
@@ -104,7 +106,7 @@ export function MetronomeApp() {
 
   // Sync theme to body background
   useEffect(() => {
-    const bgClass = themeId === 'purple' ? 'bg-slate-950' : 'bg-white'
+    const bgClass = THEMES[themeId].page.split(' ').find(c => c.startsWith('bg-')) ?? 'bg-slate-950'
     document.body.className = bgClass
   }, [themeId])
 
@@ -435,8 +437,20 @@ export function MetronomeApp() {
   const handleLogout = async () => {
     stop()
     await api.logout()
-    window.location.href = '/login'
+    navigate('/login')
   }
+
+  // Русский комментарий: определяем активный экран по текущему URL.
+  const routeKind: 'metronome' | 'songs' | 'settings' =
+    location.pathname === '/songs'
+      ? 'songs'
+      : location.pathname === '/settings'
+        ? 'settings'
+        : 'metronome'
+
+  // Русский комментарий: заголовок и кнопка "Назад" управляются в едином хедере.
+  const headerTitle = routeKind === 'songs' && currentSong ? currentSong.name : routeKind === 'settings' ? 'Настройки' : 'Metronom'
+  const showBack = routeKind === 'songs' && currentSong !== null
 
   // ─── Section ranges for playback visualization ─────────────────────────
 
@@ -478,47 +492,53 @@ export function MetronomeApp() {
 
   // ─── Main render ───────────────────────────────────────────────────────
 
-  const pageBg = themeId === 'purple' ? 'bg-slate-950 text-white' : 'bg-white text-gray-950'
+  const theme = THEMES[themeId]
 
   return (
     <ThemeProvider themeId={themeId}>
-      <div className={`min-h-screen p-4 flex flex-col items-center pb-36 ${pageBg}`}>
+      <div className={`min-h-screen ${theme.page}`}>
+        {/* Русский комментарий: постоянный хедер с названием экрана и кнопкой назад в режиме редактирования песни. */}
+        <AppHeader
+          title={headerTitle}
+          showBack={showBack}
+          onBack={handleBack}
+        />
 
-        {/* Sync status banners */}
-        {syncError && (
-          <div className="p-3 rounded-2xl w-full max-w-xl mb-3 bg-slate-900 border border-rose-800">
-            <div className="flex items-center gap-2 text-sm text-rose-400">
-              <Icon name="warning" />
-              <span className="flex-1">{syncError}</span>
+        {/* Русский комментарий: рабочая область прокручивается отдельно и имеет запас снизу под фиксированный футер. */}
+        <main className="px-4 pt-[calc(64px+env(safe-area-inset-top))] pb-[calc(168px+env(safe-area-inset-bottom))] flex flex-col items-center min-h-screen">
+          {syncError && (
+            <div className={`p-3 rounded-2xl w-full max-w-xl mb-3 ${theme.card} border-2 ${theme.borderDanger}`}>
+              <div className={`flex items-center gap-2 text-sm ${theme.textDanger}`}>
+                <Icon name="warning" />
+                <span className="flex-1">{syncError}</span>
+              </div>
             </div>
-          </div>
-        )}
-        {pendingSave && (
-          <div className="p-3 rounded-2xl w-full max-w-xl mb-3 bg-slate-900 border border-slate-800">
-            <div className="flex items-center gap-2 text-sm text-slate-400">
-              <Icon name="spinner" className="animate-spin" />
-              <span>Сохранение...</span>
+          )}
+          {pendingSave && (
+            <div className={`p-3 rounded-2xl w-full max-w-xl mb-3 ${theme.card}`}>
+              <div className={`flex items-center gap-2 text-sm ${theme.textSub}`}>
+                <Icon name="spinner" className="animate-spin" />
+                <span>Сохранение...</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Tab content */}
-        {activeTab === 'metronome' && (
-          <MetronomeTab
-            bpm={bpm}
-            changeBpm={changeBpm}
-            updateSongBpm={updateSongBpm}
-            playbackState={playbackState}
-            isPlaying={isPlaying}
-            beatsPerBar={beatsPerBar}
-            setBeatsPerBar={setBeatsPerBar}
-          />
-        )}
+          {routeKind === 'metronome' && (
+            <MetronomePage
+              bpm={bpm}
+              changeBpm={changeBpm}
+              updateSongBpm={updateSongBpm}
+              playbackState={playbackState}
+              isPlaying={isPlaying}
+              beatsPerBar={beatsPerBar}
+              setBeatsPerBar={setBeatsPerBar}
+            />
+          )}
 
-        {activeTab === 'songs' && (
-          currentSong === null ? (
-            <SongList
+          {routeKind === 'songs' && (
+            <SongsPage
               songs={songs}
+              currentSong={currentSong}
               newSongName={newSongName}
               setNewSongName={setNewSongName}
               createSong={createSong}
@@ -530,10 +550,6 @@ export function MetronomeApp() {
               songTouchStart={songTouchStart}
               songTouchMove={songTouchMove}
               songTouchEnd={songTouchEnd}
-            />
-          ) : (
-            <SongDetail
-              currentSong={currentSong}
               bpm={bpm}
               updateSongBpm={updateSongBpm}
               changeBpm={changeBpm}
@@ -550,7 +566,6 @@ export function MetronomeApp() {
               cancelSectionEdit={cancelSectionEdit}
               saveSectionEdit={saveSectionEdit}
               removeSection={removeSection}
-              setShowPatternEditor={setShowPatternEditor}
               samplesLoaded={samplesLoaded}
               playbackState={playbackState}
               currentSectionIndex={currentSectionIndex}
@@ -561,43 +576,44 @@ export function MetronomeApp() {
               sectionTouchStart={sectionTouchStart}
               sectionTouchMove={sectionTouchMove}
               sectionTouchEnd={sectionTouchEnd}
-              handleBack={handleBack}
+              setShowPatternEditor={setShowPatternEditor}
             />
-          )
-        )}
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsTab
-            themeId={themeId}
-            setThemeId={(id) => {
-              setThemeId(id)
-              localStorage.setItem('themeId', id)
-            }}
-            voiceCues={voiceCues}
-            setVoiceCues={(v) => {
-              setVoiceCues(v)
-              localStorage.setItem('voiceCues', String(v))
-            }}
-            onLogout={handleLogout}
-          />
-        )}
+          {routeKind === 'settings' && (
+            <SettingsPage
+              themeId={themeId}
+              setThemeId={(id) => {
+                setThemeId(id)
+                localStorage.setItem('themeId', id)
+              }}
+              voiceCues={voiceCues}
+              setVoiceCues={(v) => {
+                setVoiceCues(v)
+                localStorage.setItem('voiceCues', String(v))
+              }}
+              onLogout={handleLogout}
+            />
+          )}
+        </main>
 
-        {/* Fixed controls */}
-        {activeTab === 'metronome' && <PlaybackBar isPlaying={isPlaying} start={start} stop={stop} nextSectionName={playbackState.nextSectionName} />}
-        {activeTab === 'songs' && currentSong !== null && (
-          <SongControls
-            bpm={bpm}
-            changeBpm={changeBpm}
-            updateSongBpm={updateSongBpm}
-            isPlaying={isPlaying}
-            start={start}
-            stop={stop}
-            samplesLoaded={samplesLoaded}
-            onOpenPatternEditor={() => setShowPatternEditor(true)}
-          />
-        )}
-
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        {/* Русский комментарий: единый футер управляет транспортом и переходами между ключевыми маршрутами. */}
+        <AppFooter
+          bpm={bpm}
+          changeBpm={changeBpm}
+          updateSongBpm={updateSongBpm}
+          isPlaying={isPlaying}
+          start={start}
+          stop={stop}
+          samplesLoaded={samplesLoaded}
+          onOpenPatternEditor={() => setShowPatternEditor(true)}
+          routeKind={routeKind}
+          onTogglePrimaryRoute={() => {
+            if (routeKind === 'metronome') navigate('/songs')
+            else navigate('/metronome')
+          }}
+          onOpenSettings={() => navigate('/settings')}
+        />
       </div>
     </ThemeProvider>
   )

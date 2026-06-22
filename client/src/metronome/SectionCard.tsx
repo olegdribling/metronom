@@ -50,8 +50,8 @@ export function SectionCard({
       onTouchStart={sectionTouchStart(sectionIndex)}
       onTouchMove={sectionTouchMove}
       onTouchEnd={sectionTouchEnd}
-      className={`p-3 rounded-2xl border transition-all ${
-        isCurrentSection ? theme.cardActive : 'border-slate-700 bg-slate-800/50'
+      className={`p-3 rounded-2xl transition-all ${
+        isCurrentSection ? theme.cardActive : theme.card
       }`}
     >
       {/* Header */}
@@ -134,7 +134,7 @@ export function SectionCard({
               type="number"
               value={editSectionData.bars}
               onChange={(e) => setEditSectionData(prev => ({ ...prev, bars: Math.max(1, +e.target.value) }))}
-              className={`flex-1 px-3 py-2 rounded-lg text-center appearance-none focus:outline-none focus:border-violet-500 transition ${theme.input}`}
+              className={`flex-1 px-3 py-2 rounded-lg text-center appearance-none focus:outline-none transition ${theme.input}`}
               min={1} max={16}
             />
             <button
@@ -151,7 +151,7 @@ export function SectionCard({
             placeholder="Комментарий (опционально)"
             value={editSectionData.comment}
             onChange={(e) => setEditSectionData(prev => ({ ...prev, comment: e.target.value }))}
-            className={`w-full px-3 py-2 rounded-lg focus:outline-none focus:border-violet-500 transition ${theme.input}`}
+            className={`w-full px-3 py-2 rounded-lg focus:outline-none transition ${theme.input}`}
           />
 
           <div className="flex gap-3">

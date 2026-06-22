@@ -60,7 +60,7 @@ export function MetronomeTab({
                     key={n}
                     onClick={() => { setBeatsPerBar(n); setShowPicker(false) }}
                     className={`h-9 rounded-xl font-bold text-sm transition ${
-                      n === beatsPerBar ? theme.btnAccent + ' text-white' : theme.btn + ' text-slate-300'
+                      n === beatsPerBar ? theme.btnAccent : `${theme.btn} ${theme.text}`
                     }`}
                   >
                     {n}

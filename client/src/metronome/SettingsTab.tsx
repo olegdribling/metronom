@@ -34,12 +34,12 @@ export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLo
                 key={id}
                 onClick={() => setThemeId(id)}
                 className={`w-full p-4 rounded-2xl border-2 text-left transition flex items-center gap-4 ${
-                  isActive ? 'border-white/60 bg-white/5' : theme.btn + ' border-transparent'
+                  isActive ? `${theme.borderAccent} ${theme.cardActive}` : `${theme.btn} border-transparent`
                 }`}
               >
                 <div className="flex gap-1.5 shrink-0">
                   {scheme.preview.map((cls, i) => (
-                    <div key={i} className={`w-5 h-5 rounded-full ${cls} border border-white/10`} />
+                    <div key={i} className={`w-5 h-5 rounded-full ${cls} border ${theme.borderStrong}`} />
                   ))}
                 </div>
                 <span className={`font-semibold flex-1 ${theme.text}`}>{scheme._name}</span>
@@ -73,7 +73,7 @@ export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLo
         >
           <Icon name="microphone" className={`text-lg ${theme.textAccent}`} />
           <span className="flex-1 text-left font-medium">Voice cues</span>
-          <div className={`w-10 h-6 rounded-full transition-colors ${voiceCues ? 'bg-violet-600' : 'bg-gray-400'} relative`}>
+          <div className={`w-10 h-6 rounded-full transition-colors ${voiceCues ? theme.btnAccent : theme.beat} relative`}>
             <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${voiceCues ? 'translate-x-4' : 'translate-x-0.5'}`} />
           </div>
         </button>

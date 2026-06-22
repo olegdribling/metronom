@@ -34,7 +34,7 @@ export function SectionAddForm({ newSection, setNewSection, sectionTypes, addSec
           type="number"
           value={newSection.bars}
           onChange={(e) => setNewSection({ ...newSection, bars: Math.max(1, +e.target.value) })}
-          className={`flex-1 px-3 py-2 rounded-lg text-center appearance-none focus:outline-none focus:border-violet-500 transition ${theme.input}`}
+          className={`flex-1 px-3 py-2 rounded-lg text-center appearance-none focus:outline-none transition ${theme.input}`}
           min={1}
           max={16}
         />
@@ -52,7 +52,7 @@ export function SectionAddForm({ newSection, setNewSection, sectionTypes, addSec
         placeholder="Комментарий (опционально)"
         value={newSection.comment}
         onChange={(e) => setNewSection({ ...newSection, comment: e.target.value })}
-        className={`w-full px-3 py-2 rounded-lg focus:outline-none focus:border-violet-500 transition ${theme.input}`}
+        className={`w-full px-3 py-2 rounded-lg focus:outline-none transition ${theme.input}`}
       />
 
       <div className="flex gap-3">

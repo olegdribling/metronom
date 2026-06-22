@@ -90,7 +90,7 @@ export function SongControls({
           }`}
         >
           <span className="text-base font-black leading-none">{bpm}</span>
-          <span className={`text-[9px] leading-none mt-0.5 ${panel === 'bpm' ? 'text-white/70' : theme.textSub}`}>BPM</span>
+          <span className={`text-[9px] leading-none mt-0.5 ${panel === 'bpm' ? 'opacity-70' : theme.textSub}`}>BPM</span>
         </button>
 
         <button
