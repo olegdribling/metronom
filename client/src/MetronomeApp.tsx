@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ThemeProvider } from './ThemeContext'
+import { THEMES } from './theme'
 import { useAudioEngine } from './engine/audioEngine'
 import { useSongs } from './hooks/useSongs'
 import { api } from './api'
@@ -72,7 +73,7 @@ const totalBarsOf = (song: Song) => song.sections.reduce((s, sec) => s + sec.bar
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export function MetronomeApp() {
-  const { songs, save, syncError, pendingSave } = useSongs()
+  const { songs, save, syncError, pendingSave, conflictNotice, dismissConflictNotice } = useSongs()
 
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [newSongName, setNewSongName] = useState('')
@@ -479,12 +480,22 @@ export function MetronomeApp() {
   // ─── Main render ───────────────────────────────────────────────────────
 
   const pageBg = themeId === 'purple' ? 'bg-slate-950 text-white' : 'bg-white text-gray-950'
+  const theme = THEMES[themeId] ?? THEMES.purple
 
   return (
     <ThemeProvider themeId={themeId}>
       <div className={`min-h-screen p-4 flex flex-col items-center pb-36 ${pageBg}`}>
 
         {/* Sync status banners */}
+        {conflictNotice && (
+          <div className={`p-3 w-full max-w-xl mb-3 ${theme.card}`}>
+            <div className={`flex items-center gap-2 text-sm ${theme.textDanger}`}>
+              <Icon name="warning" />
+              <span className="flex-1">Изменения были сохранены в другом месте (другая вкладка или устройство). Показана последняя версия с сервера.</span>
+              <button onClick={dismissConflictNotice} className="underline">Понятно</button>
+            </div>
+          </div>
+        )}
         {syncError && (
           <div className="p-3 rounded-2xl w-full max-w-xl mb-3 bg-slate-900 border border-rose-800">
             <div className="flex items-center gap-2 text-sm text-rose-400">

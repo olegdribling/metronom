@@ -47,3 +47,7 @@ export interface SectionFormData {
   bars: number
   comment: string
 }
+
+export type SaveSongsResult =
+  | { conflict: false; updatedAt: string }
+  | { conflict: true; songs: Song[]; updatedAt: string }

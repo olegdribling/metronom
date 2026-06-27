@@ -1,4 +1,4 @@
-import type { User, Song } from './types'
+import type { User, Song, SaveSongsResult } from './types'
 
 const BASE_URL = '/api'
 
@@ -118,16 +118,23 @@ export const api = {
   },
 
   // ── Songs ──
-  async getSongs(): Promise<Song[]> {
+  async getSongs(): Promise<{ songs: Song[]; updatedAt: string | null }> {
     const res = await fetchAuth(`${BASE_URL}/songs`)
-    if (!res.ok) return []
+    if (!res.ok) return { songs: [], updatedAt: null }
     return res.json()
   },
 
-  async saveSongs(songs: Song[]): Promise<void> {
-    await fetchAuth(`${BASE_URL}/songs`, {
+  async saveSongs(songs: Song[], updatedAt: string | null): Promise<SaveSongsResult> {
+    const res = await fetchAuth(`${BASE_URL}/songs`, {
       method: 'PUT',
-      body: JSON.stringify(songs),
+      body: JSON.stringify({ songs, updatedAt }),
     })
+    if (res.status === 409) {
+      const conflict = await res.json()
+      return { conflict: true, songs: conflict.songs, updatedAt: conflict.updatedAt }
+    }
+    if (!res.ok) throw new Error('save failed')
+    const data = await res.json()
+    return { conflict: false, updatedAt: data.updatedAt }
   },
 }
