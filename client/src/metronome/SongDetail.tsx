@@ -34,7 +34,6 @@ interface SongDetailProps {
   sectionTouchStart: (i: number) => (e: React.TouchEvent) => void
   sectionTouchMove: (e: React.TouchEvent) => void
   sectionTouchEnd: (e: React.TouchEvent) => void
-  handleBack: () => void
 }
 
 export function SongDetail({
@@ -52,23 +51,11 @@ export function SongDetail({
   currentSectionRef,
   sectionDragStart, sectionDrop,
   sectionTouchStart, sectionTouchMove, sectionTouchEnd,
-  handleBack,
 }: SongDetailProps) {
   const theme = useTheme()
 
   return (
-    <div className="w-full max-w-xl mb-32 min-h-[calc(100vh-180px)]">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold truncate flex-1">{currentSong.name}</h2>
-        <button
-          onClick={handleBack}
-          className={`px-3 py-2 rounded-2xl ml-3 flex items-center gap-1 text-sm ${theme.btn}`}
-        >
-          <Icon name="arrow-left" /> Назад
-        </button>
-      </div>
-
+    <div className="w-full max-w-xl">
       {/* Sections */}
       <div className="space-y-3 mb-4">
         {currentSong.sections.map((sec, i) => (

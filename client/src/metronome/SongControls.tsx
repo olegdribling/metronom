@@ -86,7 +86,7 @@ export function SongControls({
         <button
           onClick={() => togglePanel('bpm')}
           className={`w-14 h-14 rounded-full flex flex-col items-center justify-center transition active:scale-95 ${
-            panel === 'bpm' ? theme.btnAccent + ' text-white' : theme.btn
+            panel === 'bpm' ? theme.btnAccent : theme.btn
           }`}
         >
           <span className="text-base font-black leading-none">{bpm}</span>
@@ -105,7 +105,7 @@ export function SongControls({
         <button
           onClick={() => togglePanel('sound')}
           className={`w-14 h-14 rounded-full flex items-center justify-center transition active:scale-95 text-xl ${
-            panel === 'sound' ? theme.btnAccent + ' text-white' : theme.btn
+            panel === 'sound' ? theme.btnAccent : theme.btn
           }`}
         >
           <Icon name="speaker-high" />

@@ -23,7 +23,7 @@ export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLo
           <button onClick={() => setView('main')} className={`p-2 rounded-xl ${theme.btn}`}>
             <Icon name="arrow-left" />
           </button>
-          <h2 className="text-xl font-bold">Color scheme</h2>
+          <h2 className={`text-xl font-bold ${theme.text}`}>Color scheme</h2>
         </div>
 
         <div className="space-y-3">
@@ -33,8 +33,8 @@ export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLo
               <button
                 key={id}
                 onClick={() => setThemeId(id)}
-                className={`w-full p-4 rounded-2xl border-2 text-left transition flex items-center gap-4 ${
-                  isActive ? `${theme.borderAccent} ${theme.cardActive}` : `${theme.btn} border-transparent`
+                className={`w-full p-4 text-left transition flex items-center gap-4 ${
+                  isActive ? theme.cardActive : theme.card
                 }`}
               >
                 <div className="flex gap-1.5 shrink-0">
@@ -54,7 +54,7 @@ export function SettingsTab({ themeId, setThemeId, voiceCues, setVoiceCues, onLo
 
   return (
     <div className="w-full max-w-xl">
-      <h2 className="text-xl font-bold mb-4">Settings</h2>
+      <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>Settings</h2>
 
       <div className={`${theme.card} overflow-hidden`}>
         <button

@@ -40,6 +40,15 @@ const storeRefreshToken = async (userId, hash) => {
      VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
     [userId, hash]
   )
+  cleanupExpiredTokens()
+}
+
+// Ленивая очистка протухших токенов — без cron, раз storeRefreshToken и так
+// вызывается на каждом register/login/refresh. Fire-and-forget: ошибки
+// проглатываются, чтобы очистка никогда не сломала основной auth-флоу.
+const cleanupExpiredTokens = () => {
+  pool.execute('DELETE FROM refresh_tokens WHERE expires_at < NOW()').catch(() => {})
+  pool.execute('DELETE FROM password_reset_tokens WHERE expires_at < NOW()').catch(() => {})
 }
 
 // Регистрация

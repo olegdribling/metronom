@@ -9,6 +9,8 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME     || 'metronom',
   waitForConnections: true,
   connectionLimit: 10,
+  charset: 'utf8mb4',
+  dateStrings: true,
 })
 
 module.exports = pool

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
+import { THEMES } from './theme'
 import { useAudioEngine } from './engine/audioEngine'
 import { useSongs } from './hooks/useSongs'
 import { api } from './api'
@@ -9,7 +10,6 @@ import {
   TOUCH_DRAG_DELAY_MS,
 } from './config'
 import { Song, ThemeKey, SectionFormData, SectionRange } from './types'
-import { THEMES } from './theme'
 import { PatternEditor } from './metronome/PatternEditor'
 import { Icon } from './metronome/Icon'
 import { AppHeader } from './metronome/AppHeader'
@@ -75,7 +75,7 @@ export function MetronomeApp() {
   // Русский комментарий: используем роутер для переключения между отдельными страницами.
   const location = useLocation()
   const navigate = useNavigate()
-  const { songs, save, syncError, pendingSave } = useSongs()
+  const { songs, save, syncError, pendingSave, conflictNotice, dismissConflictNotice } = useSongs()
 
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [newSongName, setNewSongName] = useState('')
@@ -492,7 +492,7 @@ export function MetronomeApp() {
 
   // ─── Main render ───────────────────────────────────────────────────────
 
-  const theme = THEMES[themeId]
+  const theme = THEMES[themeId] ?? THEMES.purple
 
   return (
     <ThemeProvider themeId={themeId}>
@@ -506,6 +506,15 @@ export function MetronomeApp() {
 
         {/* Русский комментарий: рабочая область прокручивается отдельно и имеет запас снизу под фиксированный футер. */}
         <main className="px-4 pt-[calc(64px+env(safe-area-inset-top))] pb-[calc(168px+env(safe-area-inset-bottom))] flex flex-col items-center min-h-screen">
+          {conflictNotice && (
+            <div className={`p-3 rounded-2xl w-full max-w-xl mb-3 ${theme.card}`}>
+              <div className={`flex items-center gap-2 text-sm ${theme.textDanger}`}>
+                <Icon name="warning" />
+                <span className="flex-1">Изменения были сохранены в другом месте (другая вкладка или устройство). Показана последняя версия с сервера.</span>
+                <button onClick={dismissConflictNotice} className="underline">Понятно</button>
+              </div>
+            </div>
+          )}
           {syncError && (
             <div className={`p-3 rounded-2xl w-full max-w-xl mb-3 ${theme.card} border-2 ${theme.borderDanger}`}>
               <div className={`flex items-center gap-2 text-sm ${theme.textDanger}`}>

@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { ProtectedRoute } from './auth/ProtectedRoute'
 import { MetronomeApp } from './MetronomeApp'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -13,15 +12,13 @@ export function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/" element={<MetronomeApp />} />
+      <Route path="/" element={<Navigate to="/metronome" replace />} />
+      <Route path="/app" element={<Navigate to="/metronome" replace />} />
+      <Route path="/metronome" element={<MetronomeApp />} />
+      <Route path="/songs" element={<MetronomeApp />} />
+      <Route path="/settings" element={<MetronomeApp />} />
 
-      <Route path="/app" element={
-        <ProtectedRoute>
-          <MetronomeApp />
-        </ProtectedRoute>
-      } />
-
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/metronome" replace />} />
     </Routes>
   )
 }
