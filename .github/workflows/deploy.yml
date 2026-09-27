@@ -1,0 +1,41 @@
+name: Build, test and deploy
+
+# Один workflow вместо двух независимых, как в v1 (Явно НЕ делать, п.4) —
+# бэкенда больше нет, деплоить нечего кроме статики клиента.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check + smoke-тест аудио-движка
+        run: |
+          npx tsc --noEmit
+          npm test
+
+      - name: Build
+        run: npx vite build
+
+      - name: Deploy to Hostinger
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 153.92.9.238
+          port: 65002
+          username: u673267555
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: 'dist/.'
+          target: /home/u673267555/domains/slateblue-crow-206906.hostingersite.com/public_html
+          strip_components: 1

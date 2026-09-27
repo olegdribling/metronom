@@ -1,0 +1,217 @@
+/* Каталог UI-элементов. Правило проектирования №1: до нового экрана —
+   сюда, использовать строго отсюда, новый элемент — сюда же, а не
+   одноразовым стилем в компоненте.
+
+   Список элементов (что есть и как называется):
+   .btn                — обычная кнопка
+   .btn--accent        — акцентная (основное действие)
+   .btn--danger        — опасное действие (удалить)
+   .icon-btn           — круглая кнопка только с иконкой (транспорт, футер)
+   .card               — карточка (секция песни, панель настроек)
+   .card--active       — карточка текущей воспроизводимой секции
+   .input               — поле ввода / select
+   .list-row           — строка списка (песня, плейлист)
+   .beat               — кружок доли такта на экране метронома
+   .step               — клетка шага паттерна
+   .badge              — маленький текстовый бейдж (например, "4 такта")
+   .app-header         — шапка экрана
+   .app-footer         — нижняя панель транспорта/навигации
+   .sheet              — всплывающая снизу панель (BPM, звук)
+*/
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover { background: var(--color-surface); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn--accent {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: var(--font-weight-bold);
+}
+.btn--accent:hover { background: var(--color-accent-hover); }
+
+.btn--danger {
+  color: var(--color-text-danger);
+  border-color: var(--color-border-danger);
+}
+.btn--danger:hover { background: var(--color-danger-surface-hover); }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1.125rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.icon-btn:hover { background: var(--color-surface); }
+.icon-btn:active { transform: scale(0.95); }
+.icon-btn--accent {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+.icon-btn--accent:hover { background: var(--color-accent-hover); }
+.icon-btn--danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-text-on-accent);
+}
+.icon-btn--danger:hover { background: var(--color-danger); opacity: 0.9; }
+
+.card {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.card--active {
+  background: var(--color-surface-active);
+  border: 2px solid var(--color-border-accent);
+}
+
+.input {
+  min-height: var(--touch-target-min);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.input::placeholder { color: var(--color-text-muted); }
+.input:focus { border-color: var(--color-border-strong); }
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+.list-row:hover { background: var(--color-surface); }
+
+.beat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-sub);
+  font-weight: var(--font-weight-bold);
+  transition: transform 0.08s ease, background-color 0.08s ease;
+}
+.beat--active {
+  background: var(--color-border-strong);
+  color: var(--color-text);
+  transform: scale(1.05);
+}
+.beat--accent {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  transform: scale(1.1);
+}
+
+.step {
+  height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.step--on { border-color: transparent; }
+.step--current { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-sub);
+  font-size: var(--font-size-small);
+}
+
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 var(--space-4);
+  padding-top: env(safe-area-inset-top);
+  background: var(--color-bg);
+}
+
+.app-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  padding: var(--space-2) var(--space-4);
+  padding-bottom: calc(env(safe-area-inset-bottom) + var(--space-2));
+}
+.app-footer__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.sheet {
+  max-width: 480px;
+  margin: 0 auto var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.screen {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: calc(64px + env(safe-area-inset-top) + var(--space-4)) var(--space-4)
+    calc(96px + env(safe-area-inset-bottom));
+}
