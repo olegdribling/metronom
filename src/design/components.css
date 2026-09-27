@@ -11,7 +11,11 @@
    .card--active       — карточка текущей воспроизводимой секции
    .input               — поле ввода / select
    .list-row           — строка списка (песня, плейлист)
-   .beat               — кружок доли такта на экране метронома
+   .dial               — кольцо метронома (доли/деление по кругу, флеш на удар)
+   .dial__dot          — точка на кольце (--large доля, --small деление, --active)
+   .dial__center       — центр кольца (BPM + размер такта)
+   .dial__bpm          — крупная цифра BPM (тап — редактировать)
+   .dial__meter        — бейдж «долей/деление» (тап — редактировать)
    .step               — клетка шага паттерна
    .badge              — маленький текстовый бейдж (например, "4 такта")
    .app-header         — шапка экрана
@@ -119,28 +123,95 @@
 }
 .list-row:hover { background: var(--color-surface); }
 
-.beat {
+/* Кольцо метронома — доли такта расставлены по кругу (крупные точки),
+   между ними — деление доли (мелкие точки). См. components/beatRing.ts. */
+.dial {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
+  transition: border-color 0.15s ease;
+}
+.dial--flash {
+  animation: dial-flash 0.15s ease-out;
+}
+@keyframes dial-flash {
+  from {
+    box-shadow: 0 0 0 8px var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+    border-color: var(--color-border);
+  }
+}
+.dial__dot {
+  position: absolute;
+  border-radius: 50%;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  color: var(--color-text-sub);
-  font-weight: var(--font-weight-bold);
-  transition: transform 0.08s ease, background-color 0.08s ease;
+  transform: translate(-50%, -50%);
+  transition: background-color 0.08s ease, transform 0.08s ease;
 }
-.beat--active {
+.dial__dot--large {
+  width: 20px;
+  height: 20px;
+}
+.dial__dot--small {
+  width: 10px;
+  height: 10px;
+}
+.dial__dot--active {
   background: var(--color-border-strong);
-  color: var(--color-text);
-  transform: scale(1.05);
+  transform: translate(-50%, -50%) scale(1.1);
 }
-.beat--accent {
+.dial__dot--active.dial__dot--large {
   background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  transform: scale(1.1);
+  border-color: var(--color-accent);
+}
+.dial__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  z-index: 1;
+}
+.dial__bpm {
+  font-size: 2.75rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-text);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  min-height: var(--touch-target-min);
+}
+.dial__bpm-input {
+  width: 140px;
+  font-size: 2.75rem;
+  font-weight: var(--font-weight-black);
+  text-align: center;
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-border-accent);
+}
+.dial__meter {
+  font-family: monospace;
+  font-size: 1.125rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-sub);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  min-height: var(--touch-target-min);
 }
 
 .step {

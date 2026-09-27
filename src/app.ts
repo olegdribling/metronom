@@ -37,14 +37,12 @@ export function startApp(root: HTMLElement): void {
   let screenCleanup: (() => void) | null = null
 
   function renderChrome() {
-    const state = getState()
     mount(headerSlot, appHeader({ title: titleFn(), showBack, onBack }))
     mount(
       footerSlot,
       appFooter({
-        bpm: state.bpm,
         isPlaying: engine.isPlaying,
-        samplesLoaded: state.samplesLoaded,
+        samplesLoaded: getState().samplesLoaded,
         activeRoute: routeKind,
         onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
         onNavigate: (route) =>

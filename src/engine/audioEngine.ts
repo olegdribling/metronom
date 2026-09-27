@@ -20,14 +20,15 @@ import { createSampleLoader } from './sampleLoader.ts'
 
 interface VisualEvent {
   time: number
-  type: 'beat' | 'stop'
+  type: 'beat' | 'tick' | 'stop'
   beat?: number
   bar?: number
   patternStep?: number
+  subBeat?: number
   nextSectionName?: string | null
 }
 
-const EMPTY_PLAYBACK_STATE: PlaybackState = { beat: 1, bar: 0, patternStep: 0, nextSectionName: null }
+const EMPTY_PLAYBACK_STATE: PlaybackState = { beat: 1, bar: 0, subBeat: 0, patternStep: 0, nextSectionName: null }
 
 const patternHasActiveSteps = (pattern: Song['pattern'] | undefined) =>
   !!pattern?.tracks?.some((track) => track.steps.some(Boolean))
@@ -40,14 +41,20 @@ export interface AudioEngine {
   setVoiceCues(v: boolean): void
   setVoiceCount(v: boolean): void
   setBeatsPerBar(n: number): void
+  /** Деление доли — на сколько визуальных «ударов» разбивается одна доля
+   * на кольце метронома (см. metronomeScreen.ts). Чисто визуальный
+   * параметр, не влияет на звук клика/паттерна. */
+  setBeatDivision(n: number): void
   start(): Promise<void>
   stop(): void
   readonly isPlaying: boolean
   readonly beatsPerBar: number
+  readonly beatDivision: number
   readonly samplesLoaded: boolean
   onPlaybackState(cb: (s: PlaybackState) => void): void
   onPlayingChange(cb: (playing: boolean) => void): void
   onBeatsPerBarChange(cb: (n: number) => void): void
+  onBeatDivisionChange(cb: (n: number) => void): void
   onSamplesLoadedChange(cb: (loaded: boolean) => void): void
 }
 
@@ -60,6 +67,7 @@ export function createAudioEngine(): AudioEngine {
   let beat = 1
   let bar = 0
   let beatsPerBar = 4
+  let beatDivision = 4
   let isPlaying = false
   let bpm: number = CONFIG.DEFAULT_BPM
   let currentSong: Song | null = null
@@ -71,8 +79,20 @@ export function createAudioEngine(): AudioEngine {
   let playbackListener: ((s: PlaybackState) => void) | null = null
   let playingListener: ((p: boolean) => void) | null = null
   let beatsPerBarListener: ((n: number) => void) | null = null
+  let beatDivisionListener: ((n: number) => void) | null = null
 
-  const setPlaybackState = (next: PlaybackState) => playbackListener?.(next)
+  // 'tick'-события несут только subBeat и должны сливаться с уже известными
+  // beat/bar/patternStep, а не затирать их — поэтому храним последнее
+  // полное состояние и патчим его, а не передаём событие как есть.
+  let lastPlaybackState: PlaybackState = EMPTY_PLAYBACK_STATE
+  const setPlaybackState = (patch: Partial<PlaybackState>) => {
+    lastPlaybackState = { ...lastPlaybackState, ...patch }
+    playbackListener?.(lastPlaybackState)
+  }
+  const resetPlaybackState = () => {
+    lastPlaybackState = EMPTY_PLAYBACK_STATE
+    playbackListener?.(lastPlaybackState)
+  }
   const setIsPlaying = (next: boolean) => {
     isPlaying = next
     playingListener?.(next)
@@ -228,6 +248,18 @@ export function createAudioEngine(): AudioEngine {
         }
       }
 
+      // Тики кольца метронома — чисто визуальные, звука не трогают. t=0
+      // совпадает по времени с самим 'beat'-событием выше (subBeat уже
+      // становится 0 при его обработке), поэтому здесь только t=1..N-1.
+      const tickDuration = 60 / bpm / beatDivision
+      for (let t = 1; t < beatDivision; t++) {
+        visualQueue.push({
+          time: scheduledTime + t * tickDuration,
+          type: 'tick',
+          subBeat: t,
+        })
+      }
+
       nextNoteTime += 60 / bpm
 
       if (beat === beatsPerBar) {
@@ -255,10 +287,15 @@ export function createAudioEngine(): AudioEngine {
         return
       }
       const now = audioContext.currentTime
+      // 'tick'-события (без bar/beat) добавляются в schedule() отдельным
+      // циклом от 'beat'/'stop' и могут оказаться в очереди не строго по
+      // времени — сортируем перед разбором, drain ниже полагается на то,
+      // что queue[0] всегда самое раннее.
+      visualQueue.sort((a, b) => a.time - b.time)
       while (visualQueue.length && visualQueue[0].time <= now) {
         const event = visualQueue.shift()!
         if (event.type === 'stop') {
-          setPlaybackState(EMPTY_PLAYBACK_STATE)
+          resetPlaybackState()
           setIsPlaying(false)
           if (timer) {
             clearTimeout(timer)
@@ -271,9 +308,14 @@ export function createAudioEngine(): AudioEngine {
           }
           return
         }
+        if (event.type === 'tick') {
+          setPlaybackState({ subBeat: event.subBeat! })
+          continue
+        }
         setPlaybackState({
           beat: event.beat!,
           bar: event.bar!,
+          subBeat: 0,
           patternStep: typeof event.patternStep === 'number' ? event.patternStep : 0,
           nextSectionName: event.nextSectionName ?? null,
         })
@@ -298,7 +340,7 @@ export function createAudioEngine(): AudioEngine {
     setIsPlaying(true)
     beat = 1
     bar = 0
-    setPlaybackState(EMPTY_PLAYBACK_STATE)
+    resetPlaybackState()
     visualQueue = []
     nextNoteTime = ctx.currentTime + 0.1
     schedule()
@@ -312,7 +354,7 @@ export function createAudioEngine(): AudioEngine {
       timer = null
     }
     stopVisualLoop()
-    setPlaybackState(EMPTY_PLAYBACK_STATE)
+    resetPlaybackState()
   }
 
   return {
@@ -336,6 +378,10 @@ export function createAudioEngine(): AudioEngine {
       beatsPerBar = n
       beatsPerBarListener?.(n)
     },
+    setBeatDivision(n) {
+      beatDivision = n
+      beatDivisionListener?.(n)
+    },
     start,
     stop,
     get isPlaying() {
@@ -343,6 +389,9 @@ export function createAudioEngine(): AudioEngine {
     },
     get beatsPerBar() {
       return beatsPerBar
+    },
+    get beatDivision() {
+      return beatDivision
     },
     get samplesLoaded() {
       return sampleLoader.samplesLoaded
@@ -355,6 +404,9 @@ export function createAudioEngine(): AudioEngine {
     },
     onBeatsPerBarChange(cb) {
       beatsPerBarListener = cb
+    },
+    onBeatDivisionChange(cb) {
+      beatDivisionListener = cb
     },
     onSamplesLoadedChange(cb) {
       sampleLoader.onSamplesLoadedChange(cb)

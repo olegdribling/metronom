@@ -1,14 +1,13 @@
-// Нижняя панель — .app-footer из каталога. Транспорт (play/stop) и
-// переключение между тремя экранами: метроном / плейлист / настройки.
-// BPM-слайдер живёт на экране метронома, а не тут — не размазываем один
-// смысл (регулировка темпа) по двум местам.
+// Нижняя панель — .app-footer из каталога. Три иконки: плейлист, play/stop
+// (транспорт), настройки. BPM крупно показан в кольце на экране метронома
+// (components/beatRing.ts) — здесь его больше не дублируем, один смысл
+// (текущий темп) не должен жить в двух местах сразу.
 import { h } from '../dom.ts'
 import { icon } from '../icons.ts'
 
 export type RouteKind = 'metronome' | 'playlist' | 'settings'
 
 export interface FooterProps {
-  bpm: number
   isPlaying: boolean
   samplesLoaded: boolean
   activeRoute: RouteKind
@@ -37,12 +36,7 @@ export function appFooter(props: FooterProps): HTMLElement {
     h(
       'div',
       { className: 'app-footer__bar' },
-      h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '40px' } },
-        h('span', { style: { fontWeight: 'var(--font-weight-black)', fontSize: '1.05rem' } }, String(props.bpm)),
-        h('span', { className: 'badge', style: { fontSize: '0.6rem', padding: '0' } }, 'BPM')
-      ),
+      navButton('playlist', 'music-note', 'Плейлист'),
       h(
         'button',
         {
@@ -55,7 +49,6 @@ export function appFooter(props: FooterProps): HTMLElement {
         },
         icon(props.isPlaying ? 'stop' : 'play')
       ),
-      navButton('playlist', 'music-note', 'Плейлист'),
       navButton('settings', 'gear', 'Настройки')
     )
   )

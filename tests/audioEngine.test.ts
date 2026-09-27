@@ -113,3 +113,24 @@ test('изменение BPM во время игры применяется с�
   // следующий start() (как было в v1), интервал остался бы ~400мс.
   assert.ok(avgGap < 150, `ожидали короткие интервалы (~50мс) после ускорения темпа, получили в среднем ${avgGap}мс`)
 })
+
+test('деление доли (subBeat) для кольца метронома считается 0..beatDivision-1 по кругу', async () => {
+  installWebAudioStubs()
+  const engine = createAudioEngine()
+  engine.setBeatsPerBar(4)
+  engine.setBeatDivision(4)
+  engine.setSong({ ...makeTestSong(), sections: [{ name: 'V', bars: 100, comment: '', intro: true }] })
+  engine.setBpm(240) // 1 доля = 250мс, при делении 4 один тик = 62.5мс
+
+  const subBeats: number[] = []
+  engine.onPlaybackState((s) => subBeats.push(s.subBeat))
+  await engine.start()
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  engine.stop()
+
+  const dedup = subBeats.filter((v, i) => v !== subBeats[i - 1])
+  const hasFullCycle = dedup.some(
+    (_, i) => dedup[i] === 0 && dedup[i + 1] === 1 && dedup[i + 2] === 2 && dedup[i + 3] === 3
+  )
+  assert.ok(hasFullCycle, `ожидали цикл 0→1→2→3 в subBeat, получили: ${dedup.join(',')}`)
+})

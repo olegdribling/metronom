@@ -42,7 +42,7 @@ const state: AppState = {
   beatsPerBar: 4,
   isPlaying: false,
   samplesLoaded: false,
-  playbackState: { beat: 1, bar: 0, patternStep: 0, nextSectionName: null },
+  playbackState: { beat: 1, bar: 0, subBeat: 0, patternStep: 0, nextSectionName: null },
   playlistCode: null,
   songs: [],
   currentSongId: null,

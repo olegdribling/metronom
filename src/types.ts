@@ -46,6 +46,9 @@ export interface Playlist {
 export interface PlaybackState {
   beat: number
   bar: number
+  /** Позиция внутри текущей доли, 0..beatDivision-1 — для кольца метронома
+   * (крупные точки = доли, мелкие = деление доли). Не связано с patternStep. */
+  subBeat: number
   patternStep: number
   nextSectionName: string | null
 }
