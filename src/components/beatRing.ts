@@ -1,6 +1,7 @@
 // Кольцо метронома: доли такта — крупные точки по кругу (12/3/6/9 часов при
 // 4 долях), между ними — деление доли, мелкими точками. Кольцо целиком
-// вспыхивает на каждый удар (крупный и мелкий), активная точка подсвечена.
+// вспыхивает заливкой на каждый удар (крупный и мелкий); точки закрашиваются
+// по одной и копятся весь такт, разом гаснут в начале следующего.
 // Не завязано на конкретный экран — принимает готовый центр (BPM + бейдж
 // размера) и просто расставляет точки вокруг него (Правила проектирования,
 // п.4: искать существующее, не плодить свою геометрию в каждом экране).
@@ -12,7 +13,7 @@ const DOT_RADIUS = 118
 export interface BeatRing {
   element: HTMLElement
   /** Перерисовать точки (если изменились beatsPerBar/beatDivision) и
-   * подсветить активную позицию. */
+   * закрасить пройденные с начала такта. */
   update(opts: { beat: number; subBeat: number; beatsPerBar: number; beatDivision: number; isPlaying: boolean }): void
   /** Вспышка кольца на один удар — вызывать на каждое событие движка. */
   flash(): void
@@ -31,10 +32,14 @@ export function createBeatRing(centerContent: HTMLElement): BeatRing {
   let dots: { el: HTMLElement; totalIndex: number }[] = []
   let builtBeatsPerBar = -1
   let builtBeatDivision = -1
+  // Точки, закрашенные в текущем такте — копятся весь такт (не гаснут
+  // одна за другой), разом сбрасываются в начале следующего такта.
+  let filled = new Set<number>()
 
   function rebuildDots(beatsPerBar: number, beatDivision: number) {
     dots.forEach((d) => d.el.remove())
     dots = []
+    filled = new Set()
     const stepAngle = 360 / beatsPerBar
     for (let beatIndex = 0; beatIndex < beatsPerBar; beatIndex++) {
       const baseAngle = -90 + beatIndex * stepAngle // -90° = 12 часов, дальше по часовой
@@ -60,8 +65,15 @@ export function createBeatRing(centerContent: HTMLElement): BeatRing {
       if (beatsPerBar !== builtBeatsPerBar || beatDivision !== builtBeatDivision) {
         rebuildDots(beatsPerBar, beatDivision)
       }
-      const activeIndex = (beat - 1) * beatDivision + subBeat
-      dots.forEach((d) => d.el.classList.toggle('dial__dot--active', isPlaying && d.totalIndex === activeIndex))
+      if (!isPlaying) {
+        filled.clear()
+      } else {
+        // Доля 1 без деления — начало такта: гасим заливку прошлого такта
+        // разом и копим заново.
+        if (beat === 1 && subBeat === 0) filled.clear()
+        filled.add((beat - 1) * beatDivision + subBeat)
+      }
+      dots.forEach((d) => d.el.classList.toggle('dial__dot--filled', filled.has(d.totalIndex)))
     },
     flash() {
       ring.classList.remove('dial--flash')

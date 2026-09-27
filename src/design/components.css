@@ -12,7 +12,7 @@
    .input               — поле ввода / select
    .list-row           — строка списка (песня, плейлист)
    .dial               — кольцо метронома (доли/деление по кругу, флеш на удар)
-   .dial__dot          — точка на кольце (--large доля, --small деление, --active)
+   .dial__dot          — точка на кольце (--large доля, --small деление, --filled)
    .dial__center       — центр кольца (BPM + размер такта)
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
    .dial__meter        — бейдж «долей/деление» (тап — редактировать)
@@ -132,23 +132,20 @@
   margin: 0 auto;
   border-radius: 50%;
   border: 2px solid var(--color-border);
+  background-color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s ease;
 }
 .dial--flash {
-  animation: dial-flash 0.15s ease-out;
+  /* Короче типичного интервала между ударами (0.125s при делении 4 на
+     120 BPM) — иначе вспышки перекрываются и кольцо просто стоит тёмным,
+     а не мигает отдельными вспышками. */
+  animation: dial-flash 0.08s ease-out;
 }
 @keyframes dial-flash {
-  from {
-    box-shadow: 0 0 0 8px var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  to {
-    box-shadow: 0 0 0 0 transparent;
-    border-color: var(--color-border);
-  }
+  from { background-color: var(--color-accent); }
+  to { background-color: transparent; }
 }
 .dial__dot {
   position: absolute;
@@ -166,11 +163,11 @@
   width: 10px;
   height: 10px;
 }
-.dial__dot--active {
+.dial__dot--filled {
   background: var(--color-border-strong);
   transform: translate(-50%, -50%) scale(1.1);
 }
-.dial__dot--active.dial__dot--large {
+.dial__dot--filled.dial__dot--large {
   background: var(--color-accent);
   border-color: var(--color-accent);
 }

@@ -41,9 +41,10 @@ export interface AudioEngine {
   setVoiceCues(v: boolean): void
   setVoiceCount(v: boolean): void
   setBeatsPerBar(n: number): void
-  /** Деление доли — на сколько визуальных «ударов» разбивается одна доля
-   * на кольце метронома (см. metronomeScreen.ts). Чисто визуальный
-   * параметр, не влияет на звук клика/паттерна. */
+  /** Деление доли — на сколько «ударов» разбивается одна доля (кольцо
+   * метронома, см. metronomeScreen.ts). В режиме простого клика (без
+   * песни/паттерна и без счёта голосом) удары внутри доли тоже звучат —
+   * обычным кликом, в отличие от акцента на самой доле. */
   setBeatDivision(n: number): void
   start(): Promise<void>
   stop(): void
@@ -116,27 +117,22 @@ export function createAudioEngine(): AudioEngine {
   ensureAudioContext()
   void sampleLoader.preloadAllSamples()
 
+  // Системный (синтезированный) клик — не сэмпл. Акцент — доли такта
+  // (крупные точки кольца), обычный — удары внутри доли (деление, мелкие
+  // точки). Короткая экспоненциальная огибающая (15ms) — щелчок, а не тон.
   function clickSound(time: number, accent: boolean) {
     const ctx = audioContext
     if (!ctx) return
-    const buffer = sampleLoader.getBuffer(accent ? 'click_hi' : 'click_lo')
-    if (buffer) {
-      const source = ctx.createBufferSource()
-      source.buffer = buffer
-      source.connect(ctx.destination)
-      source.start(time)
-      return
-    }
-    // Fallback-осциллятор, пока сэмпл клика ещё не декодирован
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
     gain.connect(ctx.destination)
-    osc.frequency.value = accent ? 1400 : 900
-    gain.gain.value = 1
+    osc.type = 'square'
+    osc.frequency.value = accent ? 1600 : 1000
+    gain.gain.value = accent ? 0.9 : 0.5
     osc.start(time)
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08)
-    osc.stop(time + 0.08)
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.015)
+    osc.stop(time + 0.015)
   }
 
   function playInstrumentSound(instrumentId: string, time: number) {
@@ -244,20 +240,22 @@ export function createAudioEngine(): AudioEngine {
         if (voiceCount && currentBeatValue <= 8) {
           playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
         } else if (!voiceCount) {
-          clickSound(scheduledTime, currentBeatValue === 1)
+          clickSound(scheduledTime, true) // доля такта — всегда акцент
         }
       }
 
-      // Тики кольца метронома — чисто визуальные, звука не трогают. t=0
-      // совпадает по времени с самим 'beat'-событием выше (subBeat уже
-      // становится 0 при его обработке), поэтому здесь только t=1..N-1.
+      // Тики кольца метронома (деление доли) — звучат обычным (не акцентным)
+      // кликом, но только в режиме простого клика: если есть паттерн или
+      // включён счёт голосом, они спорили бы за долю с тем звуком — как и
+      // сама доля выше. t=0 совпадает по времени с 'beat'-событием выше
+      // (subBeat уже становится 0 при его обработке), поэтому здесь t=1..N-1.
       const tickDuration = 60 / bpm / beatDivision
       for (let t = 1; t < beatDivision; t++) {
-        visualQueue.push({
-          time: scheduledTime + t * tickDuration,
-          type: 'tick',
-          subBeat: t,
-        })
+        const tickTime = scheduledTime + t * tickDuration
+        visualQueue.push({ time: tickTime, type: 'tick', subBeat: t })
+        if (!usePatternSounds && !voiceCount) {
+          clickSound(tickTime, false)
+        }
       }
 
       nextNoteTime += 60 / bpm

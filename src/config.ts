@@ -11,8 +11,6 @@ export const CONFIG = {
   DEFAULT_BPM: 120,
   BEATS_PER_BAR: 4,
   SAVE_DEBOUNCE_MS: 400,
-  CLICK_ACCENT_SAMPLE: 'sound/Real Drum Kit/SN.wav',
-  CLICK_REGULAR_SAMPLE: 'sound/Real Drum Kit/HH.wav',
 } as const
 
 export const SAMPLES_BASE = 'sound/Real Drum Kit'
@@ -49,11 +47,6 @@ export const SECTION_VOICE_SAMPLES = [
   { id: 'voice_END', sample: 'sound/Voices/outro.wav' }, // нет отдельного end.wav
 ]
 
-export const CLICK_SAMPLES = [
-  { id: 'click_hi', sample: CONFIG.CLICK_ACCENT_SAMPLE },
-  { id: 'click_lo', sample: CONFIG.CLICK_REGULAR_SAMPLE },
-]
-
 export const SECTION_TYPES = [
   'INTRO', 'VERSE', 'PRECHORUS', 'CHORUS', 'POSTCHORUS',
   'BRIDGE', 'SOLO', 'OUTRO', 'PAUSE',
@@ -62,7 +55,7 @@ export const SECTION_TYPES = [
 // ВАЖНО: при добавлении новой группы сэмплов — добавить и сюда (иначе
 // sampleLoader их не загрузит), и в globPatterns в vite.config.ts (иначе
 // не попадут в офлайн-прекеш).
-export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES, ...CLICK_SAMPLES]
+export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES]
 
 export const instrumentMetaById: Record<string, { id: string; sample?: string }> =
   ALL_INSTRUMENTS.reduce((acc, inst) => {
