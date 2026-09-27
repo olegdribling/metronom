@@ -10,6 +10,7 @@ import { Song } from '../src/types.ts'
 
 class FakeAudioParam {
   value = 0
+  setValueAtTime() {}
   exponentialRampToValueAtTime() {}
 }
 class FakeAudioContext {

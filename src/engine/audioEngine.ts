@@ -129,9 +129,14 @@ export function createAudioEngine(): AudioEngine {
     gain.connect(ctx.destination)
     osc.type = 'square'
     osc.frequency.value = accent ? 1600 : 1000
-    gain.gain.value = accent ? 0.9 : 0.5
-    osc.start(time)
+    // setValueAtTime(..., time), а не просто gain.gain.value = ... — клик
+    // планируется на будущее (lookahead до 100ms), и без явного якоря на
+    // time экспоненциальный спад стартует от "сейчас" и к моменту
+    // реального start(time) успевает почти полностью затухнуть — клик не
+    // слышен (баг, из-за которого звук не был слышен вообще).
+    gain.gain.setValueAtTime(accent ? 0.9 : 0.5, time)
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.015)
+    osc.start(time)
     osc.stop(time + 0.015)
   }
 
