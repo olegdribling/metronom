@@ -348,7 +348,7 @@ export function mountBeatEditorScreen(container: HTMLElement, beatId: string, on
           : h(
               'div',
               { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
-              h('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
+              h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' } },
                 button('Сохранить', { variant: 'accent', onClick: openSaveDialog }),
                 button('Поделиться', { onClick: handleShare, disabled: sharing }),
                 button('Удалить', { variant: 'danger', onClick: handleDelete })
