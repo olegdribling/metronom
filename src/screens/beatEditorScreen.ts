@@ -358,10 +358,26 @@ export function mountBeatEditorScreen(container: HTMLElement, beatId: string, on
         overflowX: 'auto',
       },
     })
+    // Группа = одна доля (beatDivision ударов). Чередующаяся заливка, чтобы
+    // границы долей были видны в сетке, а не только в бейдже над ней.
+    const isEvenGroup = (stepIndex: number) => Math.floor(stepIndex / beat.beatDivision) % 2 === 0
+
     grid.append(h('div', {}))
     for (let i = 0; i < totalSteps; i++) {
       grid.append(
-        h('div', { style: { textAlign: 'center', fontSize: 'var(--font-size-caption)', color: 'var(--color-text-muted)' } }, String(i + 1))
+        h(
+          'div',
+          {
+            style: {
+              textAlign: 'center',
+              fontSize: 'var(--font-size-caption)',
+              color: 'var(--color-text-muted)',
+              backgroundColor: isEvenGroup(i) ? undefined : 'var(--color-border)',
+              borderRadius: 'var(--radius-sm)',
+            },
+          },
+          String(i + 1)
+        )
       )
     }
     beat.tracks.forEach((track) => {
@@ -385,7 +401,7 @@ export function mountBeatEditorScreen(container: HTMLElement, beatId: string, on
             type: 'button',
             className: `step${active ? ' step--on' : ''}${inRange ? ' step--current' : ''}`,
             style: {
-              backgroundColor: active ? DRUM_ROLE_COLORS[track.role] : undefined,
+              backgroundColor: active ? DRUM_ROLE_COLORS[track.role] : isEvenGroup(stepIndex) ? undefined : 'var(--color-border)',
               outline: inPastePreview ? '2px dashed var(--color-border-accent)' : undefined,
             },
             dataset: { role: track.role, step: String(stepIndex) },
