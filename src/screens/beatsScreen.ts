@@ -4,7 +4,7 @@
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { icon } from '../icons.ts'
-import { BEAT_BAR_OPTIONS } from '../config.ts'
+import { PATTERN_STEPS } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 import { fetchSharedBeat } from '../data/sharedBeatApi.ts'
@@ -18,27 +18,31 @@ function barsLabel(n: number): string {
   return `${n} тактов`
 }
 
-const createEmptyBeat = (name: string, kind: BeatKind, bars: number): Beat => ({
-  id: `beat_${Date.now()}`,
-  kind,
-  name: name.trim() || (kind === 'beat' ? 'Новый бит' : 'Новый брейк'),
-  bars,
-  tracks: [],
-})
+const DEFAULT_BARS = 2
+// Сразу с тремя дорожками — самый частый стартовый набор, не заставляем
+// добавлять их вручную при каждом новом бите.
+const DEFAULT_ROLES: Beat['tracks'][number]['role'][] = ['hihat', 'snare', 'kick']
+
+function createDefaultBeat(): Beat {
+  return {
+    id: `beat_${Date.now()}`,
+    kind: 'beat',
+    name: 'Новый бит',
+    bars: DEFAULT_BARS,
+    tracks: DEFAULT_ROLES.map((role) => ({ role, steps: Array(DEFAULT_BARS * PATTERN_STEPS).fill(false) })),
+  }
+}
 
 export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: string) => void): () => void {
-  let newName = ''
-  let newKind: BeatKind = 'beat'
-  let newBars = BEAT_BAR_OPTIONS[1] // 2 такта по умолчанию
   let joinCode = ''
   let busy = false
   let errorMessage: string | null = null
 
-  function handleAdd() {
+  function handleCreate() {
+    const beat = createDefaultBeat()
     const state = getState()
-    saveBeats([...state.beats, createEmptyBeat(newName, newKind, newBars)])
-    newName = ''
-    render()
+    saveBeats([...state.beats, beat])
+    onOpenBeat(beat.id)
   }
 
   async function handleAddByCode(code: string) {
@@ -75,42 +79,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
       h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
-        h(
-          'div',
-          { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' } },
-          h('h3', {}, 'Новый бит или брейк'),
-          h('input', {
-            className: 'input',
-            placeholder: 'Название',
-            value: newName,
-            onInput: (e: Event) => (newName = (e.target as HTMLInputElement).value),
-            onKeyDown: (e: KeyboardEvent) => e.key === 'Enter' && handleAdd(),
-          }),
-          h(
-            'div',
-            { style: { display: 'flex', gap: 'var(--space-2)' } },
-            h(
-              'select',
-              {
-                className: 'input',
-                value: newKind,
-                onChange: (e: Event) => (newKind = (e.target as HTMLSelectElement).value as BeatKind),
-              },
-              h('option', { value: 'beat' }, 'Бит'),
-              h('option', { value: 'break' }, 'Брейк')
-            ),
-            h(
-              'select',
-              {
-                className: 'input',
-                value: String(newBars),
-                onChange: (e: Event) => (newBars = Number((e.target as HTMLSelectElement).value)),
-              },
-              ...BEAT_BAR_OPTIONS.map((n) => h('option', { value: String(n) }, barsLabel(n)))
-            )
-          ),
-          button('Создать', { variant: 'accent', onClick: handleAdd })
-        ),
+        button('Создать', { variant: 'accent', onClick: handleCreate }),
         state.beats.length === 0
           ? h('p', { style: { textAlign: 'center', color: 'var(--color-text-muted)' } }, 'Пока пусто — создайте первый бит выше')
           : h(
@@ -120,7 +89,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                 h(
                   'button',
                   { type: 'button', className: 'list-row', onClick: () => onOpenBeat(beat.id) },
-                  icon('metronome'),
+                  icon('drum'),
                   h('span', { style: { flex: '1', textAlign: 'left' } }, beat.name),
                   kindBadge(beat.kind),
                   h('span', { className: 'badge' }, barsLabel(beat.bars))

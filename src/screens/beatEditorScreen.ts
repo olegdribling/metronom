@@ -5,27 +5,24 @@
 // зажать-и-потянуть (надёжнее на мыши и тачскрине без отдельной библиотеки
 // жестов).
 //
-// Beat хранит РОЛИ, не сэмплы — resolveBeatPattern() конвертирует в обычный
-// Pattern прямо перед engine.setSong(), поэтому audioEngine.ts не меняется.
+// Название не редактируется вживую — только через «Сохранить» (запрашивает
+// имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
+// Прослушивание внутри редактора сейчас не показывается (см. правки после
+// первой версии) — Beat всё ещё резолвится в обычный Pattern через
+// resolveBeatPattern() (data/resolveBeat.ts) для будущего использования
+// (превью/подключение к песням), audioEngine.ts не знает про Beat/DrumKit.
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { icon } from '../icons.ts'
 import { DRUM_ROLES, DRUM_ROLE_COLORS, DRUM_ROLE_LABELS, PATTERN_STEPS } from '../config.ts'
 import { Beat, DrumRole } from '../types.ts'
-import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
-import { resolveBeatPattern } from '../data/resolveBeat.ts'
 import { shareBeat } from '../data/sharedBeatApi.ts'
 
 type EditMode = 'normal' | 'selecting' | 'selected' | 'pasting'
 type Clipboard = { width: number; rows: Record<string, boolean[]> }
 
-export function mountBeatEditorScreen(
-  container: HTMLElement,
-  beatId: string,
-  engine: AudioEngine,
-  onDeleted: () => void
-): () => void {
+export function mountBeatEditorScreen(container: HTMLElement, beatId: string, onDone: () => void): () => void {
   let mode: EditMode = 'normal'
   let selStart: number | null = null
   let selEnd: number | null = null
@@ -35,6 +32,8 @@ export function mountBeatEditorScreen(
   let sharing = false
   let shareCode: string | null = null
   let errorMessage: string | null = null
+  let showSaveDialog = false
+  let nameDraft = ''
 
   function currentBeat(): Beat | undefined {
     return getState().beats.find((b) => b.id === beatId)
@@ -43,29 +42,6 @@ export function mountBeatEditorScreen(
   function updateBeat(patch: Partial<Beat>) {
     const state = getState()
     saveBeats(state.beats.map((b) => (b.id === beatId ? { ...b, ...patch } : b)))
-    if (engine.isPlaying) refreshPreviewSong()
-  }
-
-  function refreshPreviewSong() {
-    const beat = currentBeat()
-    if (!beat) return
-    engine.setSong({
-      id: -1,
-      name: beat.name,
-      bpm: getState().bpm,
-      sections: [{ name: '', bars: beat.bars, comment: '', intro: true }],
-      pattern: resolveBeatPattern(beat),
-    })
-  }
-
-  function togglePreview() {
-    if (engine.isPlaying) {
-      engine.stop()
-      render()
-      return
-    }
-    refreshPreviewSong()
-    void engine.start()
   }
 
   // --- дорожки-роли ---
@@ -196,15 +172,23 @@ export function mountBeatEditorScreen(
     render() // остаёмся в режиме вставки — можно вставить ещё раз в другое место
   }
 
-  // --- переименование / удаление / поделиться ---
-  function handleRename(name: string) {
-    updateBeat({ name: name.trim() || currentBeat()!.name })
+  // --- сохранить (имя) / удалить / поделиться ---
+  function openSaveDialog() {
+    nameDraft = currentBeat()?.name ?? ''
+    showSaveDialog = true
+    render()
+  }
+
+  function confirmSave() {
+    updateBeat({ name: nameDraft.trim() || currentBeat()!.name })
+    showSaveDialog = false
+    onDone()
   }
 
   function handleDelete() {
     const state = getState()
     saveBeats(state.beats.filter((b) => b.id !== beatId))
-    onDeleted()
+    onDone()
   }
 
   async function handleShare() {
@@ -263,6 +247,26 @@ export function mountBeatEditorScreen(
       h('span', { style: { flex: '1', color: 'var(--color-text-sub)' } }, 'Тапните, куда вставить'),
       button('Вставить', { variant: 'accent', onClick: commitPaste }),
       iconButton('x', { onClick: cancelSelection, ariaLabel: 'Готово' })
+    )
+  }
+
+  function renderSaveDialog(): HTMLElement {
+    return h(
+      'div',
+      { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' } },
+      h('span', { style: { color: 'var(--color-text-sub)', fontSize: 'var(--font-size-small)' } }, 'Название бита'),
+      h('input', {
+        className: 'input',
+        value: nameDraft,
+        onInput: (e: Event) => (nameDraft = (e.target as HTMLInputElement).value),
+        onKeyDown: (e: KeyboardEvent) => e.key === 'Enter' && confirmSave(),
+      }),
+      h(
+        'div',
+        { style: { display: 'flex', gap: 'var(--space-2)' } },
+        button('Отмена', { onClick: () => { showSaveDialog = false; render() } }),
+        button('Сохранить', { variant: 'accent', onClick: confirmSave })
+      )
     )
   }
 
@@ -327,17 +331,6 @@ export function mountBeatEditorScreen(
       h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
-        h(
-          'div',
-          { className: 'card', style: { display: 'flex', gap: 'var(--space-2)' } },
-          h('input', {
-            className: 'input',
-            style: { flex: '1' },
-            value: beat.name,
-            onChange: (e: Event) => handleRename((e.target as HTMLInputElement).value),
-          }),
-          iconButton(engine.isPlaying ? 'stop' : 'play', { variant: 'accent', onClick: togglePreview, ariaLabel: engine.isPlaying ? 'Стоп' : 'Прослушать' })
-        ),
         grid,
         showAddRole
           ? h(
@@ -350,34 +343,22 @@ export function mountBeatEditorScreen(
           : null,
         button(showAddRole ? 'Скрыть' : '+ Добавить дорожку', { onClick: () => { showAddRole = !showAddRole; render() } }),
         renderToolbar(),
-        h(
-          'div',
-          { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
-          h('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
-            button('Поделиться', { onClick: handleShare, disabled: sharing }),
-            button('Удалить', { variant: 'danger', onClick: handleDelete })
-          ),
-          shareCode ? h('div', {}, 'Код: ', h('span', { style: { fontFamily: 'monospace', fontWeight: 'var(--font-weight-bold)' } }, shareCode)) : null,
-          errorMessage ? h('div', { style: { color: 'var(--color-text-danger)' } }, errorMessage) : null
-        )
+        showSaveDialog
+          ? renderSaveDialog()
+          : h(
+              'div',
+              { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
+              h('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
+                button('Сохранить', { variant: 'accent', onClick: openSaveDialog }),
+                button('Поделиться', { onClick: handleShare, disabled: sharing }),
+                button('Удалить', { variant: 'danger', onClick: handleDelete })
+              ),
+              shareCode ? h('div', {}, 'Код: ', h('span', { style: { fontFamily: 'monospace', fontWeight: 'var(--font-weight-bold)' } }, shareCode)) : null,
+              errorMessage ? h('div', { style: { color: 'var(--color-text-danger)' } }, errorMessage) : null
+            )
       )
     )
   }
-
-  // engine.onPlayingChange — единственный слот на всё приложение, занят в
-  // app.ts под хедер/футер; сюда его вешать нельзя (перебьёт футер). Вместо
-  // этого — onPlaybackState (тоже единственный слот, но безопасно занимать
-  // его здесь: он общий "горячий путь", используется ровно одним
-  // смонтированным экраном одновременно, как в metronomeScreen.ts/
-  // patternScreen.ts). Полный render() — только на смену isPlaying, не на
-  // каждый тик, иначе сетка будет целиком пересобираться во время игры.
-  let wasPlaying = engine.isPlaying
-  engine.onPlaybackState(() => {
-    if (engine.isPlaying !== wasPlaying) {
-      wasPlaying = engine.isPlaying
-      render()
-    }
-  })
 
   const unsubscribe = subscribe(render)
   render()
