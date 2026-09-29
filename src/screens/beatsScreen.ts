@@ -4,7 +4,6 @@
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { icon } from '../icons.ts'
-import { PATTERN_STEPS } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 import { fetchSharedBeat } from '../data/sharedBeatApi.ts'
@@ -19,17 +18,22 @@ function barsLabel(n: number): string {
 }
 
 const DEFAULT_BARS = 2
+const DEFAULT_BEATS_PER_BAR = 1
+const DEFAULT_BEAT_DIVISION = 4
 // Сразу с тремя дорожками — самый частый стартовый набор, не заставляем
 // добавлять их вручную при каждом новом бите.
 const DEFAULT_ROLES: Beat['tracks'][number]['role'][] = ['hihat', 'snare', 'kick']
 
 function createDefaultBeat(): Beat {
+  const totalSteps = DEFAULT_BARS * DEFAULT_BEATS_PER_BAR * DEFAULT_BEAT_DIVISION
   return {
     id: `beat_${Date.now()}`,
     kind: 'beat',
     name: 'Новый бит',
     bars: DEFAULT_BARS,
-    tracks: DEFAULT_ROLES.map((role) => ({ role, steps: Array(DEFAULT_BARS * PATTERN_STEPS).fill(false) })),
+    beatsPerBar: DEFAULT_BEATS_PER_BAR,
+    beatDivision: DEFAULT_BEAT_DIVISION,
+    tracks: DEFAULT_ROLES.map((role) => ({ role, steps: Array(totalSteps).fill(false) })),
   }
 }
 

@@ -41,6 +41,12 @@ export interface Beat {
   kind: BeatKind
   name: string
   bars: number
+  /** Долей в такте — как «Metrum» у кольца метронома (metronomeScreen.ts).
+   * По умолчанию 1 — одна доля на такт. */
+  beatsPerBar: number
+  /** Ударов на долю — как «деление доли» у кольца метронома. По умолчанию
+   * 4 — итоговый размер по умолчанию 1/4 (один такт = 4 удара). */
+  beatDivision: number
   tracks: BeatTrack[]
 }
 
