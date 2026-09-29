@@ -7,16 +7,19 @@
 //
 // Название не редактируется вживую — только через «Сохранить» (запрашивает
 // имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
-// Прослушивание внутри редактора сейчас не показывается (см. правки после
-// первой версии) — Beat всё ещё резолвится в обычный Pattern через
-// resolveBeatPattern() (data/resolveBeat.ts) для будущего использования
-// (превью/подключение к песням), audioEngine.ts не знает про Beat/DrumKit.
+// Своей кнопки плей в редакторе нет — играть через общий транспорт в
+// футере (app.ts), поэтому редактор держит движок в курсе: на каждое
+// изменение бита резолвит его в обычный Pattern (resolveBeatPattern(),
+// data/resolveBeat.ts) и грузит через engine.setSong() — иначе общий Play
+// не знает про бит и просто щёлкает метрономом.
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { icon } from '../icons.ts'
 import { DRUM_ROLES, DRUM_ROLE_COLORS, DRUM_ROLE_LABELS } from '../config.ts'
 import { Beat, DrumRole } from '../types.ts'
+import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
+import { resolveBeatPattern } from '../data/resolveBeat.ts'
 import { shareBeat } from '../data/sharedBeatApi.ts'
 
 type EditMode = 'normal' | 'selecting' | 'selected' | 'pasting'
@@ -39,7 +42,12 @@ function resizeSteps(steps: boolean[], newLength: number): boolean[] {
   return [...steps, ...Array(newLength - steps.length).fill(false)]
 }
 
-export function mountBeatEditorScreen(container: HTMLElement, beatId: string, onDone: () => void): () => void {
+export function mountBeatEditorScreen(
+  container: HTMLElement,
+  beatId: string,
+  engine: AudioEngine,
+  onDone: () => void
+): () => void {
   let mode: EditMode = 'normal'
   let selStart: number | null = null
   let selEnd: number | null = null
@@ -57,9 +65,22 @@ export function mountBeatEditorScreen(container: HTMLElement, beatId: string, on
     return getState().beats.find((b) => b.id === beatId)
   }
 
+  function syncEngine(beat: Beat) {
+    engine.setSong({
+      id: -1,
+      name: beat.name,
+      bpm: getState().bpm,
+      sections: [{ name: '', bars: beat.bars, comment: '', intro: true }],
+      pattern: resolveBeatPattern(beat),
+    })
+  }
+
   function updateBeat(patch: Partial<Beat>) {
     const state = getState()
-    saveBeats(state.beats.map((b) => (b.id === beatId ? { ...b, ...patch } : b)))
+    const updated = state.beats.map((b) => (b.id === beatId ? { ...b, ...patch } : b))
+    saveBeats(updated)
+    const beat = updated.find((b) => b.id === beatId)
+    if (beat) syncEngine(beat)
   }
 
   // --- размер такта (как «Metrum» у кольца метронома) ---
@@ -445,6 +466,9 @@ export function mountBeatEditorScreen(container: HTMLElement, beatId: string, on
       )
     )
   }
+
+  const initialBeat = currentBeat()
+  if (initialBeat) syncEngine(initialBeat)
 
   const unsubscribe = subscribe(render)
   render()

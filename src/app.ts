@@ -127,7 +127,7 @@ export function startApp(root: HTMLElement): void {
       showBack: true,
       onBack: () => router.navigate('/beats'),
     })
-    mountScreen((c) => mountBeatEditorScreen(c, params.id, () => router.navigate('/beats')))
+    mountScreen((c) => mountBeatEditorScreen(c, params.id, engine, () => router.navigate('/beats')))
   })
 
   router.on('/settings', () => {
