@@ -7,9 +7,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 // с ALL_INSTRUMENTS в src/config.ts — если добавляете сэмпл в код, добавьте
 // сюда и его путь.
 const usedSamplePatterns = [
-  'sound/Real Drum Kit/BD.wav',
-  'sound/Real Drum Kit/SN.wav',
-  'sound/Real Drum Kit/HH.wav',
+  'sound/Real Drum Kit/*.wav',
+  'sound/Pearl Real Kit/*.wav',
   'sound/Voices/*.wav',
 ]
 

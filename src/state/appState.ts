@@ -3,9 +3,10 @@
 // свой контейнер (кроме "горячего" пути — подсветки битов, см.
 // screens/metronomeScreen.ts, там обновление идёт напрямую в DOM,
 // в обход перерисовки всего экрана, как и в v1).
-import { PlaybackState, Song, ThemeKey } from '../types.ts'
+import { PlaybackState, Song, ThemeKey, Beat } from '../types.ts'
 import { CONFIG } from '../config.ts'
 import { PlaylistSession } from '../data/playlistSession.ts'
+import { getBeats, saveBeats as persistBeats } from '../data/beatsLibrary.ts'
 
 export interface AppState {
   themeId: ThemeKey
@@ -20,6 +21,7 @@ export interface AppState {
   songs: Song[]
   currentSongId: number | null
   connectionError: string | null
+  beats: Beat[]
 }
 
 type Listener = (state: AppState) => void
@@ -47,6 +49,7 @@ const state: AppState = {
   songs: [],
   currentSongId: null,
   connectionError: null,
+  beats: getBeats(),
 }
 
 let session: PlaylistSession | null = null
@@ -95,6 +98,15 @@ export function clearPlaylistSession(): void {
 export function saveSongs(songs: Song[]): void {
   state.songs = songs
   session?.save(songs)
+  notify()
+}
+
+// В отличие от saveSongs — не трогает Firestore/session. Библиотека битов
+// принципиально локальная (см. data/beatsLibrary.ts), делиться конкретным
+// битом можно только разово через код (data/sharedBeatApi.ts).
+export function saveBeats(beats: Beat[]): void {
+  state.beats = beats
+  persistBeats(beats)
   notify()
 }
 

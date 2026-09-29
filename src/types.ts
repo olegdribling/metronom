@@ -20,6 +20,30 @@ export interface Pattern {
   tracks: PatternTrack[]
 }
 
+// Библиотека битов/брейков (личная, локальная — data/beatsLibrary.ts).
+// Дорожка хранит РОЛЬ барабана, а не сэмпл напрямую — сэмпл резолвится через
+// DRUM_KITS (config.ts) при проигрывании, см. data/resolveBeat.ts. Так выбор
+// кита позже не потребует переделки этой модели.
+// DrumRole живёт здесь (не в config.ts), потому что types.ts ни от чего не
+// зависит (см. шапку файла) — DRUM_ROLES (сам список для перебора в UI) и
+// DRUM_KITS — в config.ts, типизированы через этот тип.
+export type DrumRole = 'kick' | 'snare' | 'hihat' | 'tom1' | 'tom2' | 'tom3' | 'crash' | 'ride'
+
+export type BeatKind = 'beat' | 'break'
+
+export interface BeatTrack {
+  role: DrumRole
+  steps: boolean[]
+}
+
+export interface Beat {
+  id: string
+  kind: BeatKind
+  name: string
+  bars: number
+  tracks: BeatTrack[]
+}
+
 export interface Section {
   name: string
   bars: number

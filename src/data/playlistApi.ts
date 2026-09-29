@@ -3,18 +3,8 @@
 // Конфликтов не разрешаем — last-write-wins (см. metronom-v2-plan.md).
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, type Unsubscribe } from 'firebase/firestore'
 import { getDb } from './firebase.ts'
+import { generateCode } from './shareCode.ts'
 import { Playlist, Song } from '../types.ts'
-
-const CODE_ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789' // без l/1, o/0 — легче читать вслух
-const CODE_LENGTH = 6
-
-function generateCode(): string {
-  let code = ''
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
-  }
-  return code
-}
 
 export async function createPlaylist(): Promise<string> {
   const db = getDb()

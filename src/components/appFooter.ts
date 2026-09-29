@@ -5,7 +5,7 @@
 import { h } from '../dom.ts'
 import { icon } from '../icons.ts'
 
-export type RouteKind = 'metronome' | 'playlist' | 'settings'
+export type RouteKind = 'metronome' | 'playlist' | 'beats' | 'settings'
 
 export interface FooterProps {
   isPlaying: boolean
@@ -37,6 +37,7 @@ export function appFooter(props: FooterProps): HTMLElement {
       'div',
       { className: 'app-footer__bar' },
       navButton('playlist', 'music-note', 'Плейлист'),
+      navButton('beats', 'drum', 'Биты'),
       h(
         'button',
         {

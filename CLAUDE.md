@@ -41,13 +41,18 @@ metronom/
 │   ├── data/
 │   │   ├── firebaseConfig.ts           # конфиг Firebase-проекта (не секрет, см. файл)
 │   │   ├── firebase.ts                  # инициализация Firestore
-│   │   ├── playlistApi.ts                # прямые операции с Firestore
-│   │   ├── playlistSession.ts             # подписка + дебаунс-запись правок
-│   │   └── knownPlaylists.ts               # localStorage-список кодов плейлистов
+│   │   ├── shareCode.ts                  # генератор кода — общий для плейлистов и битов
+│   │   ├── playlistApi.ts                 # прямые операции с Firestore (песни/плейлист)
+│   │   ├── playlistSession.ts              # подписка + дебаунс-запись правок
+│   │   ├── knownPlaylists.ts                # localStorage-список кодов плейлистов
+│   │   ├── beatsLibrary.ts                   # localStorage-библиотека битов/брейков
+│   │   ├── sharedBeatApi.ts                   # разовая передача бита по коду (не sync)
+│   │   └── resolveBeat.ts                      # Beat (роль) → Pattern (сэмпл через кит)
 │   ├── state/appState.ts                    # общее состояние приложения (pub/sub)
 │   ├── components/                            # button.ts, appHeader.ts, appFooter.ts, beatRing.ts
 │   └── screens/                                 # metronomeScreen, playlistScreen,
-│                                                  # songScreen, patternScreen, settingsScreen
+│                                                  # songScreen, patternScreen, settingsScreen,
+│                                                  # beatsScreen, beatEditorScreen
 ├── public/sound/                                  # сэмплы (drum kits, голоса)
 ├── sound/                                          # исходная резервная копия сэмплов (не деплоится)
 ├── tests/audioEngine.test.ts                        # smoke-тест тайминга движка
@@ -202,6 +207,42 @@ v1 с `useCallback` это было не так, BPM обновлялся тол
 звучит тоже, но только в режиме простого клика (не в паттерне, не при
 «Считать вслух» — там на его месте, соответственно, паттерн-сэмплы или
 голос).
+
+### Библиотека битов и брейков (для барабанщика)
+
+Личная страница (`/beats`, `/beats/:id`) — короткие кастомные паттерны
+(1-8 тактов), отдельно от песен. Два ключевых архитектурных решения, которые
+важно не сломать при правках:
+
+**Роль ≠ сэмпл.** `Beat.tracks[].role` — одна из 8 фиксированных ролей
+(`DRUM_ROLES` в `config.ts`: kick/snare/hihat/tom1/tom2/tom3/crash/ride), не
+сэмпл напрямую. Реальный файл даёт «кит» (`DRUM_KITS`, сейчас `real` и
+`pearl` — оба реально доступных кита в `public/sound/`). `data/resolveBeat.ts`
+конвертирует `Beat` в обычный `Pattern`/`PatternTrack` (резолвя роль → сэмпл
+через кит) прямо перед `engine.setSong(...)` — поэтому `audioEngine.ts` про
+`Beat`/`DrumKit` вообще не знает и не менялся. Сейчас кит всегда
+`DEFAULT_KIT_ID` — выбор кита в UI осознанно не сделан, но модель данных уже
+готова под это (см. план `playful-snacking-mountain.md` в истории, если
+нужны детали решения).
+
+**Хранение — личное, локальное, НЕ Firestore** (`data/beatsLibrary.ts`,
+`localStorage`, ключ `metronom_beats`) — в отличие от песен, которые общие на
+плейлист. Передать конкретный бит другому человеку — разовая операция через
+код (`data/sharedBeatApi.ts`, коллекция Firestore `sharedBeats/{code}`, один
+`setDoc`/`getDoc`, без `onSnapshot`), не постоянная синхронизация.
+**Требует добавить правило в консоли Firebase** для коллекции `sharedBeats`
+(её нет в этом репозитории, только в консоли) — без этого `shareBeat()`/
+`fetchSharedBeat()` падают с «Missing or insufficient permissions». Проверено
+вживую при разработке фичи.
+
+`beatEditorScreen.ts` — copy/paste/fill (выделить диапазон тапом по первой и
+последней клетке, скопировать влево/вправо, вставить в любое место повторно,
+залить остаток) — вдохновлено внешним редактором (realdrummetronome.com), но
+через тап-тап, а не зажать-и-потянуть (надёжнее без отдельного жестового
+слоя на тачскрине и мыши одновременно).
+
+Привязка битов/брейков к секциям песни (чтобы реально собрать партию всей
+песни) — намеренно отдельный следующий шаг, не сделано.
 
 ### Данные и синхронизация (Firebase Firestore)
 

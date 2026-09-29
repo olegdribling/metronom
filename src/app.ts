@@ -14,6 +14,8 @@ import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
 import { mountPatternScreen } from './screens/patternScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
+import { mountBeatsScreen } from './screens/beatsScreen.ts'
+import { mountBeatEditorScreen } from './screens/beatEditorScreen.ts'
 
 export function startApp(root: HTMLElement): void {
   const engine = createAudioEngine()
@@ -46,7 +48,9 @@ export function startApp(root: HTMLElement): void {
         activeRoute: routeKind,
         onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
         onNavigate: (route) =>
-          router.navigate(route === 'metronome' ? '/metronome' : route === 'playlist' ? '/playlist' : '/settings'),
+          router.navigate(
+            route === 'metronome' ? '/metronome' : route === 'playlist' ? '/playlist' : route === 'beats' ? '/beats' : '/settings'
+          ),
       })
     )
   }
@@ -111,6 +115,19 @@ export function startApp(root: HTMLElement): void {
     const songId = Number(params.id)
     setScreen('playlist', () => 'Паттерн', { showBack: true, onBack: () => router.navigate(`/song/${songId}`) })
     mountScreen((c) => mountPatternScreen(c, songId, engine))
+  })
+
+  router.on('/beats', () => {
+    setScreen('beats', () => 'Биты')
+    mountScreen((c) => mountBeatsScreen(c, (beatId) => router.navigate(`/beats/${beatId}`)))
+  })
+
+  router.on('/beats/:id', (params) => {
+    setScreen('beats', () => getState().beats.find((b) => b.id === params.id)?.name ?? 'Бит', {
+      showBack: true,
+      onBack: () => router.navigate('/beats'),
+    })
+    mountScreen((c) => mountBeatEditorScreen(c, params.id, engine, () => router.navigate('/beats')))
   })
 
   router.on('/settings', () => {

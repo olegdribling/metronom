@@ -1,5 +1,6 @@
 // Константы приложения — обычные данные, не зависят от фреймворка.
 // Перенесено из v1 почти без изменений.
+import { DrumRole } from './types.ts'
 
 export const CONFIG = {
   MAX_SONGS: 50,
@@ -22,6 +23,82 @@ export const PATTERN_INSTRUMENTS = [
 ]
 
 export const PATTERN_STEPS = 16
+
+// Роли барабана для библиотеки битов/брейков (screens/beatsScreen.ts,
+// beatEditorScreen.ts) — фиксированный набор, звук на роль даёт «кит»
+// (DRUM_KITS), а не хардкод сэмпла на дорожку. Так позже можно добавить
+// выбор кита, не переделывая модель данных бита.
+export const DRUM_ROLES: DrumRole[] = ['kick', 'snare', 'hihat', 'tom1', 'tom2', 'tom3', 'crash', 'ride']
+
+export interface DrumKit {
+  id: string
+  name: string
+  sounds: Record<DrumRole, { label: string; sample: string }>
+}
+
+export const DRUM_KITS: DrumKit[] = [
+  {
+    id: 'real',
+    name: 'Real Drum Kit',
+    sounds: {
+      kick: { label: 'Bass Drum', sample: `${SAMPLES_BASE}/BD.wav` },
+      snare: { label: 'Snare', sample: `${SAMPLES_BASE}/SN.wav` },
+      hihat: { label: 'Hi-Hat', sample: `${SAMPLES_BASE}/HH.wav` },
+      tom1: { label: 'Tom 1', sample: `${SAMPLES_BASE}/TOMHI5.wav` },
+      tom2: { label: 'Tom 2', sample: `${SAMPLES_BASE}/TOMMID5.wav` },
+      tom3: { label: 'Tom 3', sample: `${SAMPLES_BASE}/TOMLOW5.wav` },
+      crash: { label: 'Crash', sample: `${SAMPLES_BASE}/CRASH.wav` },
+      ride: { label: 'Ride', sample: `${SAMPLES_BASE}/RIDE.wav` },
+    },
+  },
+  {
+    id: 'pearl',
+    name: 'Pearl Real Kit',
+    sounds: {
+      kick: { label: 'Bass Drum', sample: 'sound/Pearl Real Kit/pearlkit-kick.wav' },
+      snare: { label: 'Snare', sample: 'sound/Pearl Real Kit/pearlkit-snare1.wav' },
+      hihat: { label: 'Hi-Hat', sample: 'sound/Pearl Real Kit/pearlkit-hihat.wav' },
+      tom1: { label: 'Tom 1', sample: 'sound/Pearl Real Kit/pearlkit-hitom1.wav' },
+      tom2: { label: 'Tom 2', sample: 'sound/Pearl Real Kit/pearlkit-hitom2.wav' },
+      tom3: { label: 'Tom 3', sample: 'sound/Pearl Real Kit/pearlkit-lowtom1.wav' },
+      // У Pearl-кита нет отдельного crash — берём ближайший по звучанию файл.
+      crash: { label: 'Crash', sample: 'sound/Pearl Real Kit/pearlkit-ridecrash.wav' },
+      ride: { label: 'Ride', sample: 'sound/Pearl Real Kit/pearlkit-ride1.wav' },
+    },
+  },
+]
+export const DEFAULT_KIT_ID = DRUM_KITS[0].id
+
+// Плоские id для sampleLoader — по одному на (кит, роль), напр. "real_kick".
+export const KIT_INSTRUMENTS = DRUM_KITS.flatMap((kit) =>
+  DRUM_ROLES.map((role) => ({ id: `${kit.id}_${role}`, sample: kit.sounds[role].sample }))
+)
+
+export const BEAT_BAR_OPTIONS = [1, 2, 4, 8]
+
+// Цвет закрашенной клетки в редакторе бита — по роли, не по киту (кит просто
+// меняет сэмпл под той же ролью).
+export const DRUM_ROLE_COLORS: Record<DrumRole, string> = {
+  kick: '#fb923c',
+  snare: '#facc15',
+  hihat: '#60a5fa',
+  tom1: '#f472b6',
+  tom2: '#fb7185',
+  tom3: '#f87171',
+  crash: '#34d399',
+  ride: '#4ade80',
+}
+
+export const DRUM_ROLE_LABELS: Record<DrumRole, string> = {
+  kick: 'Бас-бочка',
+  snare: 'Малый',
+  hihat: 'Хай-хэт',
+  tom1: 'Том 1',
+  tom2: 'Том 2',
+  tom3: 'Том 3',
+  crash: 'Крэш',
+  ride: 'Райд',
+}
 
 export const VOICE_SAMPLES = [
   { id: 'voice_1', sample: 'sound/Voices/number_1.wav' },
@@ -55,7 +132,7 @@ export const SECTION_TYPES = [
 // ВАЖНО: при добавлении новой группы сэмплов — добавить и сюда (иначе
 // sampleLoader их не загрузит), и в globPatterns в vite.config.ts (иначе
 // не попадут в офлайн-прекеш).
-export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES]
+export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...KIT_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES]
 
 export const instrumentMetaById: Record<string, { id: string; sample?: string }> =
   ALL_INSTRUMENTS.reduce((acc, inst) => {
