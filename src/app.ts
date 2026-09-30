@@ -1,6 +1,6 @@
 // Корень приложения: роутер + общий хедер/футер + переключение экранов.
 // Один audioEngine на всё приложение — экраны только читают/дёргают его.
-import { h, mount } from './dom.ts'
+import { h } from './dom.ts'
 import { createRouter } from './router.ts'
 import { createAudioEngine } from './engine/audioEngine.ts'
 import { appHeader, HeaderRightAction } from './components/appHeader.ts'
@@ -27,10 +27,14 @@ export function startApp(root: HTMLElement): void {
 
   const router = createRouter()
 
-  const headerSlot = h('div')
-  const mainSlot = h('main', { className: 'screen' })
-  const footerSlot = h('div')
-  root.append(headerSlot, mainSlot, footerSlot)
+  // Ровно три div-а — прямые дети контейнера (root), без лишней вложенности:
+  // container > div(header), div(main), div(footer). appHeader()/appFooter()
+  // каждый раз возвращают новый div — старый меняем на новый через
+  // replaceWith(), а не держим пустую обёртку и mount() внутрь нее.
+  let headerEl = appHeader({ title: 'Metronom' })
+  const mainSlot = h('div', { className: 'screen' })
+  let footerEl = h('div', { className: 'app-footer' })
+  root.append(headerEl, mainSlot, footerEl)
 
   let routeKind: RouteKind = 'metronome'
   let titleFn: () => string = () => 'Metronom'
@@ -40,20 +44,22 @@ export function startApp(root: HTMLElement): void {
   let screenCleanup: (() => void) | null = null
 
   function renderChrome() {
-    mount(headerSlot, appHeader({ title: titleFn(), showBack, onBack, rightAction }))
-    mount(
-      footerSlot,
-      appFooter({
-        isPlaying: engine.isPlaying,
-        samplesLoaded: getState().samplesLoaded,
-        activeRoute: routeKind,
-        onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
-        onNavigate: (route) =>
-          router.navigate(
-            route === 'metronome' ? '/metronome' : route === 'playlist' ? '/playlist' : route === 'beats' ? '/beats' : '/settings'
-          ),
-      })
-    )
+    const newHeader = appHeader({ title: titleFn(), showBack, onBack, rightAction })
+    headerEl.replaceWith(newHeader)
+    headerEl = newHeader
+
+    const newFooter = appFooter({
+      isPlaying: engine.isPlaying,
+      samplesLoaded: getState().samplesLoaded,
+      activeRoute: routeKind,
+      onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
+      onNavigate: (route) =>
+        router.navigate(
+          route === 'metronome' ? '/metronome' : route === 'playlist' ? '/playlist' : route === 'beats' ? '/beats' : '/settings'
+        ),
+    })
+    footerEl.replaceWith(newFooter)
+    footerEl = newFooter
   }
 
   engine.onPlayingChange(renderChrome)

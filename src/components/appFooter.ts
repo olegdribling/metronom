@@ -15,7 +15,7 @@ export interface FooterProps {
   onNavigate: (route: RouteKind) => void
 }
 
-export function appFooter(props: FooterProps): HTMLElement {
+export function appFooter(props: FooterProps): HTMLDivElement {
   const navButton = (route: RouteKind, iconName: string, label: string) =>
     h(
       'button',
@@ -31,7 +31,7 @@ export function appFooter(props: FooterProps): HTMLElement {
     )
 
   return h(
-    'footer',
+    'div',
     { className: 'app-footer' },
     h(
       'div',

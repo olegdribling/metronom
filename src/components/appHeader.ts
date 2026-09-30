@@ -13,9 +13,9 @@ export function appHeader(opts: {
   showBack?: boolean
   onBack?: () => void
   rightAction?: HeaderRightAction
-}): HTMLElement {
+}): HTMLDivElement {
   return h(
-    'header',
+    'div',
     { className: 'app-header' },
     opts.showBack
       ? iconButton('arrow-left', { onClick: opts.onBack, ariaLabel: 'Назад' })
