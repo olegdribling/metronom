@@ -15,10 +15,10 @@
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { icon } from '../icons.ts'
-import { DRUM_ROLES, DRUM_ROLE_COLORS, DRUM_ROLE_LABELS } from '../config.ts'
+import { CONFIG, DRUM_ROLES, DRUM_ROLE_COLORS, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
 import { Beat, DrumRole } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats } from '../state/appState.ts'
+import { getState, subscribe, patchState, saveBeats } from '../state/appState.ts'
 import { resolveBeatPattern } from '../data/resolveBeat.ts'
 import { shareBeat } from '../data/sharedBeatApi.ts'
 
@@ -30,6 +30,11 @@ const MIN_BEATS_PER_BAR = 1
 const MAX_BEATS_PER_BAR = 16
 const MIN_BEAT_DIVISION = 1
 const MAX_BEAT_DIVISION = 8
+// «+»/«−» справа от сетки добавляют/убирают целиком один такт текущего
+// размера (см. setBars) — не отдельный шаг, коротких битов/брейков
+// достаточно в пределах 8 тактов.
+const MIN_BARS = 1
+const MAX_BARS = 8
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 function totalStepsOf(beat: Beat): number {
@@ -46,7 +51,8 @@ export function mountBeatEditorScreen(
   container: HTMLElement,
   beatId: string,
   engine: AudioEngine,
-  onDone: () => void
+  onDone: () => void,
+  onRegisterSave: (fn: () => void) => void
 ): () => void {
   let mode: EditMode = 'normal'
   let selStart: number | null = null
@@ -60,6 +66,8 @@ export function mountBeatEditorScreen(
   let showSaveDialog = false
   let nameDraft = ''
   let showMeterEditor = false
+  let showKitPicker = false
+  let editingBpm = false
 
   function currentBeat(): Beat | undefined {
     return getState().beats.find((b) => b.id === beatId)
@@ -94,6 +102,39 @@ export function mountBeatEditorScreen(
       tracks: beat.tracks.map((t) => ({ ...t, steps: resizeSteps(t.steps, newTotal) })),
     })
     render()
+  }
+
+  // «+»/«−» справа от сетки — добавить/убрать целиком один такт текущего
+  // размера (beatsPerBar × beatDivision), не отдельный шаг.
+  function setBars(delta: 1 | -1) {
+    const beat = currentBeat()
+    if (!beat) return
+    const newBars = clamp(beat.bars + delta, MIN_BARS, MAX_BARS)
+    if (newBars === beat.bars) return
+    const newTotal = newBars * beat.beatsPerBar * beat.beatDivision
+    updateBeat({
+      bars: newBars,
+      tracks: beat.tracks.map((t) => ({ ...t, steps: resizeSteps(t.steps, newTotal) })),
+    })
+    render()
+  }
+
+  // --- кит (звук) ---
+  function setKit(kitId: string) {
+    updateBeat({ kitId })
+    render()
+  }
+
+  // --- глобальный BPM (тот же, что у метронома/футера) ---
+  function updateBpm(next: number) {
+    const clamped = clamp(Math.round(next), CONFIG.MIN_BPM, CONFIG.MAX_BPM)
+    engine.setBpm(clamped)
+    patchState({ bpm: clamped })
+  }
+
+  function togglePlay() {
+    if (engine.isPlaying) engine.stop()
+    else void engine.start()
   }
 
   // --- дорожки-роли ---
@@ -360,6 +401,105 @@ export function mountBeatEditorScreen(
     )
   }
 
+  // «+»/«−» справа от сетки — целыми тактами текущего размера (setBars).
+  function renderBarsControl(beat: Beat): HTMLElement {
+    return h(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)', flexShrink: '0' } },
+      iconButton('plus', { onClick: () => setBars(1), ariaLabel: 'Добавить такт', disabled: beat.bars >= MAX_BARS }),
+      h('span', { style: { fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } }, String(beat.bars)),
+      iconButton('minus', { onClick: () => setBars(-1), ariaLabel: 'Убрать такт', disabled: beat.bars <= MIN_BARS })
+    )
+  }
+
+  // Sound/кит — своя роль→сэмпл раскладка (DRUM_KITS, config.ts), хранится
+  // на самом бите (beat.kitId), не общая на приложение.
+  function renderKitPicker(beat: Beat): HTMLElement {
+    const kit = DRUM_KITS.find((k) => k.id === beat.kitId) ?? DRUM_KITS[0]
+    const kitButton = h(
+      'button',
+      { type: 'button', className: 'list-row', onClick: () => { showKitPicker = !showKitPicker; render() } },
+      h('span', { style: { color: 'var(--color-text-sub)' } }, 'Sound'),
+      h('span', { style: { flex: '1', textAlign: 'right', fontWeight: 'var(--font-weight-bold)' } }, kit.name)
+    )
+    if (!showKitPicker) return kitButton
+    return h(
+      'div',
+      {},
+      kitButton,
+      h(
+        'div',
+        { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' } },
+        ...DRUM_KITS.map((k) =>
+          h(
+            'button',
+            { type: 'button', className: 'list-row', onClick: () => { setKit(k.id); showKitPicker = false; render() } },
+            h('span', { style: { flex: '1', textAlign: 'left' } }, k.name),
+            k.id === beat.kitId ? icon('check-circle') : null
+          )
+        )
+      )
+    )
+  }
+
+  // BPM (тап — вписать вручную, как в metronomeScreen.ts) + play/stop —
+  // общий транспорт, просто продублирован здесь для удобства прямо в
+  // редакторе (плюс к кнопке в футере, которая никуда не делась).
+  function renderBpmPlay(): HTMLElement {
+    const bpm = getState().bpm
+    const bpmEl: HTMLElement = editingBpm
+      ? (() => {
+          const input = h('input', {
+            type: 'number',
+            className: 'input',
+            style: { width: '84px', fontSize: 'var(--font-size-h2)', fontWeight: 'var(--font-weight-bold)', textAlign: 'center' },
+            value: String(bpm),
+            min: String(CONFIG.MIN_BPM),
+            max: String(CONFIG.MAX_BPM),
+            onKeyDown: (e: KeyboardEvent) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') { editingBpm = false; render() }
+            },
+            onChange: (e: Event) => {
+              updateBpm(Number((e.target as HTMLInputElement).value))
+              editingBpm = false
+              render()
+            },
+          })
+          queueMicrotask(() => { input.focus(); input.select() })
+          return input
+        })()
+      : h(
+          'button',
+          {
+            type: 'button',
+            style: {
+              background: 'none',
+              border: 'none',
+              fontSize: 'var(--font-size-h2)',
+              fontWeight: 'var(--font-weight-bold)',
+              color: 'var(--color-text)',
+              cursor: 'pointer',
+              minWidth: '64px',
+              minHeight: 'var(--touch-target-min)',
+            },
+            onClick: () => { editingBpm = true; render() },
+          },
+          String(bpm)
+        )
+
+    return h(
+      'div',
+      { className: 'card', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-4)' } },
+      bpmEl,
+      iconButton(engine.isPlaying ? 'stop' : 'play', {
+        variant: 'accent',
+        onClick: togglePlay,
+        ariaLabel: engine.isPlaying ? 'Стоп' : 'Играть',
+      })
+    )
+  }
+
   function render() {
     const beat = currentBeat()
     if (!beat) {
@@ -438,7 +578,7 @@ export function mountBeatEditorScreen(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
         renderMeter(beat),
-        grid,
+        h('div', { style: { display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' } }, grid, renderBarsControl(beat)),
         showAddRole
           ? h(
               'div',
@@ -456,19 +596,38 @@ export function mountBeatEditorScreen(
               'div',
               { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
               h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' } },
-                button('Сохранить', { variant: 'accent', onClick: openSaveDialog }),
                 button('Поделиться', { onClick: handleShare, disabled: sharing }),
                 button('Удалить', { variant: 'danger', onClick: handleDelete })
               ),
               shareCode ? h('div', {}, 'Код: ', h('span', { style: { fontFamily: 'monospace', fontWeight: 'var(--font-weight-bold)' } }, shareCode)) : null,
               errorMessage ? h('div', { style: { color: 'var(--color-text-danger)' } }, errorMessage) : null
-            )
+            ),
+        renderKitPicker(beat),
+        renderBpmPlay()
       )
     )
   }
 
   const initialBeat = currentBeat()
   if (initialBeat) syncEngine(initialBeat)
+
+  // Иконка play/stop в этом экране должна отражать engine.isPlaying, но
+  // engine.onPlayingChange — единственный слот на всё приложение, занят в
+  // app.ts под футер (перебить его нельзя). Вместо этого — onPlaybackState
+  // (тоже единственный слот, но им безопасно пользоваться здесь: горячий
+  // путь занят ровно одним смонтированным экраном одновременно, как в
+  // metronomeScreen.ts/patternScreen.ts). Полный render() — только на смену
+  // isPlaying, не на каждый тик, иначе сетка целиком пересобиралась бы во
+  // время игры.
+  let wasPlaying = engine.isPlaying
+  engine.onPlaybackState(() => {
+    if (engine.isPlaying !== wasPlaying) {
+      wasPlaying = engine.isPlaying
+      render()
+    }
+  })
+
+  onRegisterSave(openSaveDialog)
 
   const unsubscribe = subscribe(render)
   render()

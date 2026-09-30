@@ -47,6 +47,9 @@ export interface Beat {
   /** Ударов на долю — как «деление доли» у кольца метронома. По умолчанию
    * 4 — итоговый размер по умолчанию 1/4 (один такт = 4 удара). */
   beatDivision: number
+  /** id кита из DRUM_KITS (config.ts) — свой на каждый бит, не общий на
+   * приложение, как и bars/beatsPerBar/beatDivision. */
+  kitId: string
   tracks: BeatTrack[]
 }
 

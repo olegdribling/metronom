@@ -3,7 +3,7 @@
 import { h, mount } from './dom.ts'
 import { createRouter } from './router.ts'
 import { createAudioEngine } from './engine/audioEngine.ts'
-import { appHeader } from './components/appHeader.ts'
+import { appHeader, HeaderRightAction } from './components/appHeader.ts'
 import { appFooter, RouteKind } from './components/appFooter.ts'
 import { getState, subscribe, patchState, setPlaylistSession } from './state/appState.ts'
 import { openPlaylistSession } from './data/playlistSession.ts'
@@ -36,10 +36,11 @@ export function startApp(root: HTMLElement): void {
   let titleFn: () => string = () => 'Metronom'
   let showBack = false
   let onBack: () => void = () => {}
+  let rightAction: HeaderRightAction | undefined
   let screenCleanup: (() => void) | null = null
 
   function renderChrome() {
-    mount(headerSlot, appHeader({ title: titleFn(), showBack, onBack }))
+    mount(headerSlot, appHeader({ title: titleFn(), showBack, onBack, rightAction }))
     mount(
       footerSlot,
       appFooter({
@@ -58,11 +59,16 @@ export function startApp(root: HTMLElement): void {
   engine.onPlayingChange(renderChrome)
   subscribe(renderChrome)
 
-  function setScreen(kind: RouteKind, title: () => string, opts: { showBack?: boolean; onBack?: () => void } = {}) {
+  function setScreen(
+    kind: RouteKind,
+    title: () => string,
+    opts: { showBack?: boolean; onBack?: () => void; rightAction?: HeaderRightAction } = {}
+  ) {
     routeKind = kind
     titleFn = title
     showBack = !!opts.showBack
     onBack = opts.onBack ?? (() => {})
+    rightAction = opts.rightAction
     renderChrome()
   }
 
@@ -123,11 +129,20 @@ export function startApp(root: HTMLElement): void {
   })
 
   router.on('/beats/:id', (params) => {
-    setScreen('beats', () => getState().beats.find((b) => b.id === params.id)?.name ?? 'Бит', {
+    const beatId = params.id
+    // Иконка "дискета" в шапке дёргает openSaveDialog внутри уже
+    // смонтированного экрана — экран сам регистрирует свою функцию через
+    // onRegisterSave при монтировании (mountScreen ниже выполняется сразу
+    // после setScreen, до первого возможного клика по иконке).
+    let requestSave: () => void = () => {}
+    setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
       onBack: () => router.navigate('/beats'),
+      rightAction: { icon: 'floppy-disk', ariaLabel: 'Сохранить', onClick: () => requestSave() },
     })
-    mountScreen((c) => mountBeatEditorScreen(c, params.id, engine, () => router.navigate('/beats')))
+    mountScreen((c) =>
+      mountBeatEditorScreen(c, beatId, engine, () => router.navigate('/beats'), (fn) => { requestSave = fn })
+    )
   })
 
   router.on('/settings', () => {

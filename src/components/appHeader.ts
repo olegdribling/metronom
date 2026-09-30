@@ -2,13 +2,27 @@
 import { h } from '../dom.ts'
 import { iconButton } from './button.ts'
 
-export function appHeader(opts: { title: string; showBack?: boolean; onBack?: () => void }): HTMLElement {
+export interface HeaderRightAction {
+  icon: string
+  ariaLabel: string
+  onClick: () => void
+}
+
+export function appHeader(opts: {
+  title: string
+  showBack?: boolean
+  onBack?: () => void
+  rightAction?: HeaderRightAction
+}): HTMLElement {
   return h(
     'header',
     { className: 'app-header' },
-    h('h2', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, opts.title),
     opts.showBack
       ? iconButton('arrow-left', { onClick: opts.onBack, ariaLabel: 'Назад' })
+      : null,
+    h('h2', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, opts.title),
+    opts.rightAction
+      ? iconButton(opts.rightAction.icon, { onClick: opts.rightAction.onClick, ariaLabel: opts.rightAction.ariaLabel })
       : null
   )
 }

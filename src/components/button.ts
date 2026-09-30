@@ -33,13 +33,19 @@ export function button(
 
 export function iconButton(
   iconName: string,
-  opts: { variant?: ButtonVariant; onClick?: () => void; ariaLabel: string }
+  opts: { variant?: ButtonVariant; onClick?: () => void; ariaLabel: string; disabled?: boolean }
 ): HTMLButtonElement {
   const cls =
     opts.variant === 'accent' ? ' icon-btn--accent' : opts.variant === 'danger' ? ' icon-btn--danger' : ''
   return h(
     'button',
-    { type: 'button', className: `icon-btn${cls}`, onClick: opts.onClick, 'aria-label': opts.ariaLabel },
+    {
+      type: 'button',
+      className: `icon-btn${cls}`,
+      onClick: opts.disabled ? undefined : opts.onClick,
+      disabled: opts.disabled,
+      'aria-label': opts.ariaLabel,
+    },
     icon(iconName)
   )
 }

@@ -4,6 +4,7 @@
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { icon } from '../icons.ts'
+import { DEFAULT_KIT_ID } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 import { fetchSharedBeat } from '../data/sharedBeatApi.ts'
@@ -17,7 +18,9 @@ function barsLabel(n: number): string {
   return `${n} тактов`
 }
 
-const DEFAULT_BARS = 2
+// 1 такт — «+» справа от сетки в редакторе добавляет ещё один такт такого
+// же размера, не нужно начинать с нескольких сразу.
+const DEFAULT_BARS = 1
 const DEFAULT_BEATS_PER_BAR = 1
 const DEFAULT_BEAT_DIVISION = 4
 // Сразу с тремя дорожками — самый частый стартовый набор, не заставляем
@@ -33,6 +36,7 @@ function createDefaultBeat(): Beat {
     bars: DEFAULT_BARS,
     beatsPerBar: DEFAULT_BEATS_PER_BAR,
     beatDivision: DEFAULT_BEAT_DIVISION,
+    kitId: DEFAULT_KIT_ID,
     tracks: DEFAULT_ROLES.map((role) => ({ role, steps: Array(totalSteps).fill(false) })),
   }
 }
