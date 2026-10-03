@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { getDb } from './firebase.ts'
 import { generateCode } from './shareCode.ts'
 import { Beat } from '../types.ts'
+import { normalizeBeat } from './beatsLibrary.ts'
 
 export async function shareBeat(beat: Beat): Promise<string> {
   const db = getDb()
@@ -24,5 +25,5 @@ export async function fetchSharedBeat(code: string): Promise<Beat | null> {
   const db = getDb()
   const snap = await getDoc(doc(db, 'sharedBeats', code))
   if (!snap.exists()) return null
-  return snap.data().beat as Beat
+  return normalizeBeat(snap.data().beat as Beat)
 }

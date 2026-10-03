@@ -74,7 +74,9 @@ export const KIT_INSTRUMENTS = DRUM_KITS.flatMap((kit) =>
   DRUM_ROLES.map((role) => ({ id: `${kit.id}_${role}`, sample: kit.sounds[role].sample }))
 )
 
-export const BEAT_BAR_OPTIONS = [1, 2, 4, 8]
+// Максимальная длина бита в шагах (столбцах сетки) — тот же предел, что у
+// референса (realdrummetronome.com/editor, 128 столбцов).
+export const BEAT_MAX_STEPS = 128
 
 // Цвет закрашенной клетки в редакторе бита — по роли, не по киту (кит просто
 // меняет сэмпл под той же ролью).

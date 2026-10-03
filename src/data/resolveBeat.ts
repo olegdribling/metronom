@@ -7,11 +7,11 @@ import { Beat, Pattern } from '../types.ts'
 export function resolveBeatPattern(beat: Beat, kitId: string = beat.kitId ?? DEFAULT_KIT_ID): Pattern {
   const kit = DRUM_KITS.find((k) => k.id === kitId) ?? DRUM_KITS[0]
   return {
-    // ВАЖНО: bars × beatsPerBar × beatDivision, не PATTERN_STEPS — это
-    // фактическая длина track.steps[] (beatEditorScreen.ts: totalStepsOf()).
-    // Раньше здесь было bars * PATTERN_STEPS (16 на такт) — расходилось с
-    // реальной длиной дорожек при любом размере такта, кроме 4/4.
-    steps: beat.bars * beat.beatsPerBar * beat.beatDivision,
+    // ВАЖНО: beat.steps (фактическая длина track.steps[]), не PATTERN_STEPS
+    // и не «такты × 16» — раньше здесь было bars * PATTERN_STEPS и
+    // расходилось с реальной длиной дорожек при любом размере такта, кроме
+    // 4/4. Длина свободная, не кратна такту (см. Beat.steps в types.ts).
+    steps: beat.steps,
     tracks: beat.tracks.map((track) => ({
       id: `${kit.id}_${track.role}`,
       name: kit.sounds[track.role].label,

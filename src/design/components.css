@@ -15,9 +15,12 @@
    .dial__dot          — точка на кольце (--large доля, --small деление, --filled)
    .dial__center       — центр кольца (BPM + размер такта)
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
-   .dial__meter        — бейдж «долей/деление» (тап — редактировать); переиспользуется
-                         и вне кольца — beatEditorScreen.ts, тот же смысл (Metrum бита)
+   .dial__meter        — бейдж «долей/деление» (тап — редактировать)
    .step               — клетка шага паттерна
+   .beat-grid          — сетка редактора бита (components/beatGrid.ts): строки-
+                         иконки, лента столбцов, выделение, тулбар, вставка
+   .drum-icon          — SVG-иконка роли барабана (components/drumIcons.ts)
+   .switch             — переключатель вкл/выкл (--on — включён)
    .badge              — маленький текстовый бейдж (например, "4 такта")
    .app-header         — шапка экрана
    .app-footer         — нижняя панель транспорта/навигации
@@ -221,6 +224,303 @@
 }
 .step--on { border-color: transparent; }
 .step--current { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
+
+/* Сетка редактора бита — components/beatGrid.ts. Геометрия как у референса
+   (realdrummetronome.com/editor): столбец 44px (клетка 40 + поля по 2),
+   строка 32px (клетка 30 + поля по 1), сверху 30px под номера тактов.
+   Те же числа — COL_W/ROW_H в beatGrid.ts, менять вместе.
+   Ширину ленты (--beat-grid-viewport-w, целое число столбцов) и число строк
+   (--beat-grid-rows) выставляет beatGrid.ts. */
+.beat-grid {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.beat-grid__roles {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 30px var(--space-1) 0 0;
+}
+.beat-grid__role {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 30px;
+  margin: 1px 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.beat-grid__role:hover { background: var(--color-grid-column-hover); }
+.beat-grid__role--add { color: var(--color-text-sub); font-size: 1.125rem; }
+.beat-grid__role:disabled { opacity: 0.4; cursor: not-allowed; }
+.beat-grid__role:disabled:hover { background: transparent; }
+
+.drum-icon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+}
+.drum-icon svg { width: 100%; height: 100%; }
+
+.beat-grid__viewport {
+  flex: none;
+  width: var(--beat-grid-viewport-w, 0px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 30px 0 10px;
+  /* Затухание по краям, пока есть куда прокрутить (--fade-l/--fade-r 0..1
+     выставляет beatGrid.ts на прокрутку). */
+  --fade-l: 0;
+  --fade-r: 0;
+  -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, calc(1 - var(--fade-l))) 0, #000 40px, #000 calc(100% - 40px), rgba(0, 0, 0, calc(1 - var(--fade-r))) 100%);
+  mask-image: linear-gradient(to right, rgba(0, 0, 0, calc(1 - var(--fade-l))) 0, #000 40px, #000 calc(100% - 40px), rgba(0, 0, 0, calc(1 - var(--fade-r))) 100%);
+}
+.beat-grid__surface {
+  position: relative;
+  display: flex;
+  width: max-content;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: auto;
+}
+/* В режиме вставки блок водят пальцем — лента не должна прокручиваться. */
+.beat-grid__surface--pasting { touch-action: none; }
+
+.beat-grid__col {
+  flex: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 44px;
+  border-radius: 5px;
+}
+.beat-grid__col:hover,
+.beat-grid__col--active { background: var(--color-grid-column-hover); }
+.beat-grid__col--playing {
+  background: var(--color-grid-playhead);
+  box-shadow: inset 0 0 0 1px var(--color-border-accent);
+}
+/* Призрачные столбцы за концом бита — тап по ним удлиняет бит. */
+.beat-grid__col--template { opacity: 0.2; }
+/* Номер такта — над серединой такта (см. buildColumn в beatGrid.ts). */
+.beat-grid__col[data-bar]::before {
+  content: attr(data-bar);
+  position: absolute;
+  top: -30px;
+  line-height: 30px;
+  font-size: var(--font-size-small);
+  color: var(--color-text-sub);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.beat-grid__col--label-edge::before { left: 0; }
+.beat-grid__col--label-mid::before { left: 50%; }
+/* Граница такта — вертикальная линия по левому краю первого столбца такта. */
+.beat-grid__col--bar-start::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  left: -1px;
+  width: 2px;
+  height: calc(100% + 60px);
+  border-radius: 2px;
+  background: linear-gradient(to bottom, transparent, var(--color-border-accent) 15%, var(--color-border-accent) 85%, transparent);
+  pointer-events: none;
+}
+
+.beat-grid__cell {
+  width: 40px;
+  height: 30px;
+  margin: 1px 2px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+/* Чередование долей (группа = beatDivision шагов). */
+.beat-grid__cell--alt { background: var(--color-border); }
+.beat-grid__cell--on {
+  background: var(--cell-color);
+  border-color: transparent;
+}
+/* Последняя нажатая клетка. */
+.beat-grid__cell--focus { box-shadow: 0 0 6px 2px var(--cell-color, var(--color-border-accent)); }
+
+.beat-grid__col-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  margin-top: 4px;
+}
+/* Корзина — под столбцом (удалить шаг) и в конце строки (удалить инструмент). */
+.beat-grid__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.beat-grid__remove:hover {
+  color: var(--color-text-danger);
+  background: var(--color-danger-surface-hover);
+}
+.beat-grid__remove:disabled { opacity: 0.4; cursor: not-allowed; }
+.beat-grid__remove:disabled:hover { color: var(--color-text-muted); background: transparent; }
+
+.beat-grid__selection {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border: 2px solid var(--color-border-accent);
+  border-radius: 6px;
+  background: var(--color-grid-selection);
+}
+.beat-grid__selection--preview { border-style: dashed; }
+.beat-grid__selection--invalid { border-color: var(--color-grid-invalid); }
+/* Клетки блока в режиме вставки — поверх сетки, полупрозрачно. */
+.beat-grid__ghost {
+  position: absolute;
+  width: 40px;
+  height: 30px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border-accent);
+  background: var(--color-bg);
+  opacity: 0.65;
+}
+.beat-grid__ghost--on { background: var(--cell-color); }
+
+.beat-grid__toolbar {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-md);
+}
+.beat-grid__selection[hidden],
+.beat-grid__toolbar[hidden] { display: none; }
+.beat-grid__tool {
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.beat-grid__tool--wide { flex-basis: 44px; width: 44px; }
+.beat-grid__tool:hover { background: var(--color-surface); }
+.beat-grid__tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.beat-grid__tool:disabled:hover { background: var(--color-bg); }
+
+.beat-grid__row-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding-top: 30px;
+}
+.beat-grid__row-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 30px;
+  margin: 1px 0;
+}
+/* Наведение на корзину строки подсвечивает всю строку в ленте. */
+.beat-grid__row-action::after {
+  content: none;
+  position: absolute;
+  top: 0;
+  right: 100%;
+  width: var(--beat-grid-viewport-w, 0px);
+  height: 30px;
+  border-radius: 5px;
+  background: var(--color-grid-column-hover);
+  pointer-events: none;
+}
+.beat-grid__row-action:hover::after { content: ''; }
+
+.beat-grid__add-col-wrap {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 0 0 var(--space-2);
+}
+.beat-grid__add-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: max(30px, calc(var(--beat-grid-rows, 1) * 32px - 2px));
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.beat-grid__add-col:hover { background: var(--color-surface); }
+.beat-grid__add-col:disabled { opacity: 0.4; cursor: not-allowed; }
+.beat-grid__add-col:disabled:hover { background: transparent; }
+.beat-grid__count {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-sub);
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  transition: left 0.15s ease;
+}
+.switch--on { background: var(--color-accent); }
+.switch--on::after {
+  left: 18px;
+  background: var(--color-text-on-accent);
+}
 
 .badge {
   display: inline-flex;

@@ -40,7 +40,13 @@ export interface Beat {
   id: string
   kind: BeatKind
   name: string
-  bars: number
+  /** Длина бита в шагах (столбцах сетки), 1..BEAT_MAX_STEPS — свободная, как
+   * в референсе (realdrummetronome.com/editor): столбцы добавляются и
+   * удаляются по одному, такт — только разметка сетки (beatsPerBar ×
+   * beatDivision шагов), последний такт может быть неполным. Раньше длина
+   * хранилась целыми тактами (`bars`) — старые биты мигрирует
+   * normalizeBeat() (data/beatsLibrary.ts). Всегда равна track.steps.length. */
+  steps: number
   /** Долей в такте — как «Metrum» у кольца метронома (metronomeScreen.ts).
    * По умолчанию 1 — одна доля на такт. */
   beatsPerBar: number
@@ -48,7 +54,7 @@ export interface Beat {
    * 4 — итоговый размер по умолчанию 1/4 (один такт = 4 удара). */
   beatDivision: number
   /** id кита из DRUM_KITS (config.ts) — свой на каждый бит, не общий на
-   * приложение, как и bars/beatsPerBar/beatDivision. */
+   * приложение, как и steps/beatsPerBar/beatDivision. */
   kitId: string
   tracks: BeatTrack[]
 }

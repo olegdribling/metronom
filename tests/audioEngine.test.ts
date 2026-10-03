@@ -135,3 +135,36 @@ test('деление доли (subBeat) для кольца метронома �
   )
   assert.ok(hasFullCycle, `ожидали цикл 0→1→2→3 в subBeat, получили: ${dedup.join(',')}`)
 })
+
+test('паттерн без секций (бит из редактора) крутится ровно по своей длине, не по такту движка', async () => {
+  installWebAudioStubs()
+  const engine = createAudioEngine()
+  engine.setBeatsPerBar(4) // такт движка = 4 доли × 2 шага = 8 шагов — длина бита (7) с ним не совпадает
+  const steps = 7
+  engine.setSong({
+    ...makeTestSong(),
+    sections: [], // так бит отдаёт beatEditorScreen.ts: без длины песни, бесконечно
+    pattern: {
+      steps,
+      tracks: [{ id: 'real_kick', name: 'Kick', color: '', sample: '', steps: Array.from({ length: steps }, (_, i) => i === 0) }],
+    },
+  })
+  engine.setBpm(600) // 1 доля = 100мс, шаг = 50мс
+
+  const seen: number[] = []
+  engine.onPlaybackState((s) => {
+    if (engine.isPlaying && s.patternStep !== seen[seen.length - 1]) seen.push(s.patternStep)
+  })
+  await engine.start()
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  engine.stop()
+
+  // start() синхронно сбрасывает patternStep в 0 до первого шага — первый 0
+  // в списке может быть этим сбросом, а не реальным шагом; он не мешает:
+  // дальше каждый следующий шаг обязан быть (предыдущий + 1) mod 7. С
+  // секцией на 2 такта после 0123456 0123456 шло 01 и сброс в 0 — обрыв.
+  assert.ok(seen.length > steps * 2, `ожидали больше двух кругов, получили: ${seen.join('')}`)
+  seen.slice(1).forEach((step, i) => {
+    assert.equal(step, (seen[i] + 1) % steps, `шаги должны идти по кругу 0..6 без обрывов, получили: ${seen.join('')}`)
+  })
+})

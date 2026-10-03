@@ -8,6 +8,7 @@ import { DEFAULT_KIT_ID } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 import { fetchSharedBeat } from '../data/sharedBeatApi.ts'
+import { beatBarCount } from '../data/beatsLibrary.ts'
 import { isFirebaseConfigured } from '../data/firebase.ts'
 
 function barsLabel(n: number): string {
@@ -18,9 +19,8 @@ function barsLabel(n: number): string {
   return `${n} тактов`
 }
 
-// 1 такт — «+» справа от сетки в редакторе добавляет ещё один такт такого
-// же размера, не нужно начинать с нескольких сразу.
-const DEFAULT_BARS = 1
+// Один такт размера 1/4 — дальше длина наращивается в редакторе по одному
+// столбцу («+» справа от сетки или тап по призрачному столбцу за концом).
 const DEFAULT_BEATS_PER_BAR = 1
 const DEFAULT_BEAT_DIVISION = 4
 // Сразу с тремя дорожками — самый частый стартовый набор, не заставляем
@@ -28,12 +28,12 @@ const DEFAULT_BEAT_DIVISION = 4
 const DEFAULT_ROLES: Beat['tracks'][number]['role'][] = ['hihat', 'snare', 'kick']
 
 function createDefaultBeat(): Beat {
-  const totalSteps = DEFAULT_BARS * DEFAULT_BEATS_PER_BAR * DEFAULT_BEAT_DIVISION
+  const totalSteps = DEFAULT_BEATS_PER_BAR * DEFAULT_BEAT_DIVISION
   return {
     id: `beat_${Date.now()}`,
     kind: 'beat',
     name: 'Новый бит',
-    bars: DEFAULT_BARS,
+    steps: totalSteps,
     beatsPerBar: DEFAULT_BEATS_PER_BAR,
     beatDivision: DEFAULT_BEAT_DIVISION,
     kitId: DEFAULT_KIT_ID,
@@ -100,7 +100,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                   icon('drum'),
                   h('span', { style: { flex: '1', textAlign: 'left' } }, beat.name),
                   kindBadge(beat.kind),
-                  h('span', { className: 'badge' }, barsLabel(beat.bars))
+                  h('span', { className: 'badge' }, barsLabel(beatBarCount(beat)))
                 )
               )
             ),

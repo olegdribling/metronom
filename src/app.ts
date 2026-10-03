@@ -41,10 +41,11 @@ export function startApp(root: HTMLElement): void {
   let showBack = false
   let onBack: () => void = () => {}
   let rightAction: HeaderRightAction | undefined
+  let centerTitle = false
   let screenCleanup: (() => void) | null = null
 
   function renderChrome() {
-    const newHeader = appHeader({ title: titleFn(), showBack, onBack, rightAction })
+    const newHeader = appHeader({ title: titleFn(), showBack, onBack, rightAction, centerTitle })
     headerEl.replaceWith(newHeader)
     headerEl = newHeader
 
@@ -68,13 +69,14 @@ export function startApp(root: HTMLElement): void {
   function setScreen(
     kind: RouteKind,
     title: () => string,
-    opts: { showBack?: boolean; onBack?: () => void; rightAction?: HeaderRightAction } = {}
+    opts: { showBack?: boolean; onBack?: () => void; rightAction?: HeaderRightAction; centerTitle?: boolean } = {}
   ) {
     routeKind = kind
     titleFn = title
     showBack = !!opts.showBack
     onBack = opts.onBack ?? (() => {})
     rightAction = opts.rightAction
+    centerTitle = !!opts.centerTitle
     renderChrome()
   }
 
@@ -145,6 +147,7 @@ export function startApp(root: HTMLElement): void {
       showBack: true,
       onBack: () => router.navigate('/beats'),
       rightAction: { icon: 'floppy-disk', ariaLabel: 'Сохранить', onClick: () => requestSave() },
+      centerTitle: true,
     })
     mountScreen((c) =>
       mountBeatEditorScreen(c, beatId, engine, () => router.navigate('/beats'), (fn) => { requestSave = fn })

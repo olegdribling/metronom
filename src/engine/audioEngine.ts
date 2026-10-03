@@ -48,6 +48,10 @@ export interface AudioEngine {
   setBeatDivision(n: number): void
   start(): Promise<void>
   stop(): void
+  /** Проиграть один сэмпл прямо сейчас, вне расписания — прослушка в
+   * редакторе бита (тап по иконке инструмента, «Звук при клике»). Не
+   * трогает воспроизведение и его состояние. */
+  previewSound(instrumentId: string): void
   readonly isPlaying: boolean
   readonly beatsPerBar: number
   readonly beatDivision: number
@@ -387,6 +391,14 @@ export function createAudioEngine(): AudioEngine {
     },
     start,
     stop,
+    previewSound(instrumentId) {
+      const ctx = ensureAudioContext()
+      // Первый тап может прийти раньше любого Play — контекст ещё
+      // suspended (политика автовоспроизведения), а resume() асинхронный:
+      // планируем звук уже после него, иначе он уйдёт в «замороженное» время.
+      if (ctx.state === 'suspended') void ctx.resume().then(() => playInstrumentSound(instrumentId, ctx.currentTime))
+      else playInstrumentSound(instrumentId, ctx.currentTime)
+    },
     get isPlaying() {
       return isPlaying
     },

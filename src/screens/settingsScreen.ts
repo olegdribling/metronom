@@ -40,31 +40,7 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
             onClick: () => setVoiceCues(!state.voiceCues),
           },
           h('span', { style: { flex: '1', textAlign: 'left' } }, 'Голос при смене секции'),
-          h(
-            'div',
-            {
-              style: {
-                width: '40px',
-                height: '24px',
-                borderRadius: 'var(--radius-full)',
-                background: state.voiceCues ? 'var(--color-accent)' : 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                position: 'relative',
-              },
-            },
-            h('div', {
-              style: {
-                position: 'absolute',
-                top: '1px',
-                left: state.voiceCues ? '18px' : '2px',
-                width: '18px',
-                height: '18px',
-                borderRadius: '50%',
-                background: state.voiceCues ? 'var(--color-text-on-accent)' : 'var(--color-text-muted)',
-                transition: 'left 0.15s ease',
-              },
-            })
-          )
+          h('span', { className: `switch${state.voiceCues ? ' switch--on' : ''}` })
         )
       )
     )

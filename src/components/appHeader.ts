@@ -13,6 +13,9 @@ export function appHeader(opts: {
   showBack?: boolean
   onBack?: () => void
   rightAction?: HeaderRightAction
+  /** Заголовок по центру шапки (экран бита). Ровно по центру он только при
+   * кнопках с обеих сторон — у них одинаковая ширина (.icon-btn). */
+  centerTitle?: boolean
 }): HTMLDivElement {
   return h(
     'div',
@@ -20,7 +23,19 @@ export function appHeader(opts: {
     opts.showBack
       ? iconButton('arrow-left', { onClick: opts.onBack, ariaLabel: 'Назад' })
       : null,
-    h('h2', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, opts.title),
+    h(
+      'h2',
+      {
+        style: {
+          flex: '1',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: opts.centerTitle ? 'center' : undefined,
+        },
+      },
+      opts.title
+    ),
     opts.rightAction
       ? iconButton(opts.rightAction.icon, { onClick: opts.rightAction.onClick, ariaLabel: opts.rightAction.ariaLabel })
       : null
