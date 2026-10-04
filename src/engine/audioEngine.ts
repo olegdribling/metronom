@@ -157,6 +157,27 @@ export function createAudioEngine(): AudioEngine {
     )
   }
 
+  // Звуки, отданные звуковой карте наперёд (lookahead, а удары внутри доли —
+  // сразу на всю долю: у метронома при 120 и 4/4 это 2 с вперёд). Стоп
+  // глушит их все разом — иначе после Стоп доигрывали уже запланированные
+  // удары. Звук сам уходит из набора, когда отзвучал.
+  const scheduled = new Set<AudioScheduledSourceNode>()
+  function track(node: AudioScheduledSourceNode) {
+    scheduled.add(node)
+    node.onended = () => scheduled.delete(node)
+  }
+  function silenceScheduled() {
+    scheduled.forEach((node) => {
+      try {
+        node.stop()
+      } catch {
+        // ещё не запущен или уже остановлен — отключения ниже хватит
+      }
+      node.disconnect()
+    })
+    scheduled.clear()
+  }
+
   // Системный (синтезированный) клик — не сэмпл. Акцент — доли такта
   // (крупные точки кольца), обычный — удары внутри доли (деление, мелкие
   // точки). Короткая экспоненциальная огибающая (15ms) — щелчок, а не тон.
@@ -178,9 +199,12 @@ export function createAudioEngine(): AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.015)
     osc.start(time)
     osc.stop(time + 0.015)
+    track(osc)
   }
 
-  function playInstrumentSound(instrumentId: string, time: number) {
+  // tracked — звук воспроизведения (Стоп его глушит); прослушка в редакторе
+  // бита (previewSound) — нет.
+  function playInstrumentSound(instrumentId: string, time: number, tracked = true) {
     const ctx = audioContext
     if (!ctx) return
     const buffer = sampleLoader.getBuffer(instrumentId)
@@ -189,6 +213,7 @@ export function createAudioEngine(): AudioEngine {
       source.buffer = buffer
       source.connect(ctx.destination)
       source.start(time)
+      if (tracked) track(source)
       return
     }
     // Сэмпл не загрузился — запасной осциллятор, с якорем на time (см.
@@ -203,6 +228,7 @@ export function createAudioEngine(): AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12)
     osc.start(time)
     osc.stop(time + 0.12)
+    if (tracked) track(osc)
   }
 
   // Источник звука на доле секции: филл, покрывающий эту долю (поздний
@@ -427,6 +453,7 @@ export function createAudioEngine(): AudioEngine {
       visualRaf = null
     }
     visualQueue = []
+    silenceScheduled()
     resetPlaybackState()
   }
 
@@ -456,8 +483,8 @@ export function createAudioEngine(): AudioEngine {
       // Первый тап может прийти раньше любого Play — контекст ещё
       // suspended (политика автовоспроизведения), а resume() асинхронный:
       // планируем звук уже после него, иначе он уйдёт в «замороженное» время.
-      if (ctx.state === 'suspended') void ctx.resume().then(() => playInstrumentSound(instrumentId, ctx.currentTime))
-      else playInstrumentSound(instrumentId, ctx.currentTime)
+      if (ctx.state === 'suspended') void ctx.resume().then(() => playInstrumentSound(instrumentId, ctx.currentTime, false))
+      else playInstrumentSound(instrumentId, ctx.currentTime, false)
     },
     get isPlaying() {
       return isPlaying

@@ -12,6 +12,8 @@ import type { TestContext } from 'node:test'
 export interface Played {
   time: number
   sound: string
+  /** Заглушён до конца: движок отключил звук (Стоп). */
+  silenced?: boolean
 }
 
 export interface FakeAudioOptions {
@@ -45,16 +47,29 @@ export function installFakeAudio(t: TestContext, opts: FakeAudioOptions = {}) {
       this.state = 'running'
     }
     createBufferSource() {
+      let entry: Played | null = null
       const source = {
         buffer: null as { sample: string } | null,
+        onended: null as null | (() => void),
         connect() {},
-        start: (time = 0) => played.push({ time, sound: source.buffer!.sample }),
+        disconnect: () => entry && (entry.silenced = true),
+        start: (time = 0) => played.push((entry = { time, sound: source.buffer!.sample })),
+        stop() {},
       }
       return source
     }
     createOscillator() {
       const frequency = new FakeParam()
-      return { connect() {}, type: '', frequency, start: (time = 0) => played.push({ time, sound: `osc:${frequency.value}` }), stop() {} }
+      let entry: Played | null = null
+      return {
+        connect() {},
+        disconnect: () => entry && (entry.silenced = true),
+        onended: null as null | (() => void),
+        type: '',
+        frequency,
+        start: (time = 0) => played.push((entry = { time, sound: `osc:${frequency.value}` })),
+        stop() {},
+      }
     }
     createGain() {
       return { connect() {}, gain: new FakeParam() }

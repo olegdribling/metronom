@@ -315,3 +315,18 @@ test('счёт голосом — на каждой точке: крупная �
   const gaps = played.slice(1).map((p, i) => Math.round((p.time - played[i].time) * 1000))
   assert.ok(gaps.every((g) => g === 500), `точка раз в 0,5 с, получили: ${gaps.join(',')}`)
 })
+
+test('Стоп сразу глушит уже запланированные удары', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  engine.setBeatDivision(4)
+  // Метроном 120 точек в минуту, 4/4: доля 2 с, её 4 удара планируются разом.
+  engine.setBpm(30)
+  await engine.start()
+  advance(300) // прозвучал первый удар, ещё 3 доли уже отданы звуковой карте
+  engine.stop()
+  const now = Date.now() / 1000
+  const ahead = played.filter((p) => p.time > now)
+  assert.ok(ahead.length >= 3, `ожидали заранее запланированные удары, их ${ahead.length}`)
+  assert.ok(ahead.every((p) => p.silenced), 'после Стоп запланированные удары не должны прозвучать')
+})
