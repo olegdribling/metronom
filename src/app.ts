@@ -157,8 +157,15 @@ export function startApp(root: HTMLElement): void {
     )
   })
 
+  // «Редактировать» из выбора филла в песне: редактор бита открывается из
+  // песни, и «назад»/сохранение возвращают в неё, к той же секции.
+  let beatEditorReturn: { songId: number; section: number } | null = null
+  let songFocus: { songId: number; section: number } | null = null
+
   router.on('/song/:id', (params) => {
     const songId = Number(params.id)
+    const focusSection = songFocus?.songId === songId ? songFocus.section : null
+    songFocus = null
     loadSongIntoEngine(songId)
     setScreen('playlist', () => getState().songs.find((s) => s.id === songId)?.name ?? 'Песня', {
       showBack: true,
@@ -170,7 +177,12 @@ export function startApp(root: HTMLElement): void {
         songId,
         engine,
         () => router.navigate(`/song/${songId}/pattern`),
-        () => router.navigate('/playlist')
+        () => router.navigate('/playlist'),
+        (beatId, section) => {
+          beatEditorReturn = { songId, section }
+          router.navigate(`/beats/${beatId}`)
+        },
+        focusSection
       )
     )
   })
@@ -197,14 +209,22 @@ export function startApp(root: HTMLElement): void {
     // setSong) — правки песни больше не должны его перебивать.
     engineSongId = null
     engineSong = null
+    const back = beatEditorReturn
+    beatEditorReturn = null
+    const leave = () => {
+      if (back) {
+        songFocus = back
+        router.navigate(`/song/${back.songId}`)
+      } else router.navigate('/beats')
+    }
     setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
-      onBack: () => router.navigate('/beats'),
+      onBack: leave,
       rightAction: { icon: 'floppy-disk', ariaLabel: 'Сохранить', onClick: () => requestSave() },
       centerTitle: true,
     })
     mountScreen((c) =>
-      mountBeatEditorScreen(c, beatId, engine, () => router.navigate('/beats'), (fn) => { requestSave = fn })
+      mountBeatEditorScreen(c, beatId, engine, leave, (fn) => { requestSave = fn })
     )
   })
 

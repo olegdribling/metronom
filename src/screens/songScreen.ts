@@ -15,10 +15,10 @@
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { icon } from '../icons.ts'
-import { CONFIG, SECTION_TYPES } from '../config.ts'
-import { Beat, PlaybackState, Section, SectionFill, SectionFormData, Song } from '../types.ts'
+import { CONFIG, DEFAULT_KIT_ID, SECTION_TYPES } from '../config.ts'
+import { Beat, DrumRole, PlaybackState, Section, SectionFill, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveSongs } from '../state/appState.ts'
+import { getState, subscribe, saveSongs, saveBeats } from '../state/appState.ts'
 
 const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '' })
 
@@ -27,7 +27,11 @@ export function mountSongScreen(
   songId: number,
   engine: AudioEngine,
   onOpenPattern: () => void,
-  onDeleted: () => void
+  onDeleted: () => void,
+  /** «Редактировать» в выборе филла — открыть бит в редакторе (из песни). */
+  onEditBeat: (beatId: string, section: number) => void,
+  /** Вернулись из редактора бита — доехать до этой секции. */
+  focusSection: number | null
 ): () => void {
   let showAddForm = false
   let newSection = emptySectionForm()
@@ -73,6 +77,69 @@ export function mountSongScreen(
     updateSection(index, { fills: [...fills, { at, beatId }].sort((a, b) => a.at - b.at) })
     fillPicker = null
     render()
+  }
+
+  // «Редактировать» на доле: правится то, что звучит в этом квадратике, и
+  // только здесь (решение пользователя) — всегда через новый бит-филл на
+  // этой доле, общие биты библиотеки не трогаются:
+  //   стоит филл → его копия встаёт на его место;
+  //   звучит грув секции → кусок грува на эту долю (M клеток) → филл;
+  //   звучит паттерн песни → его кусок на эту долю → филл;
+  //   только щелчок → пустой филл 1/4.
+  function editAt(index: number, at: number) {
+    const song = currentSong()
+    const sec = song?.sections[index]
+    if (!song || !sec) return
+    const fills = sec.fills ?? []
+    const id = `beat_${Date.now()}`
+    const covering = fills
+      .filter((f) => beatById(f.beatId) && at >= f.at && at < f.at + fillLength(f))
+      .sort((a, b) => b.at - a.at)[0]
+    let beat: Beat
+    let fillAt = at
+    if (covering) {
+      const source = beatById(covering.beatId)!
+      beat = { ...source, id, name: `${source.name} (копия)`, tracks: source.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
+      fillAt = covering.at
+    } else {
+      beat = sliceForBeat(song, index, at, id)
+    }
+    saveBeats([...getState().beats, beat])
+    updateSection(index, { fills: [...fills.filter((f) => f.at !== fillAt), { at: fillAt, beatId: id }].sort((a, b) => a.at - b.at) })
+    fillPicker = null
+    onEditBeat(id, index)
+  }
+
+  // Кусок того, что звучит на доле `at` секции, как новый бит на одну долю.
+  function sliceForBeat(song: Song, index: number, at: number, id: string): Beat {
+    const sec = song.sections[index]
+    const name = `${sec.name} · доля ${at + 1}`
+    const groove = beatById(sec.beatId)
+    if (groove) {
+      const m = groove.beatDivision
+      const offset = (at * m) % groove.steps
+      return {
+        id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: groove.kitId,
+        tracks: groove.tracks.map((t) => ({ role: t.role, steps: t.steps.slice(offset, offset + m) })),
+      }
+    }
+    // Паттерн песни: дорожки — сэмплы редактора паттерна (bd/sd/hh), идут
+    // по кругу от начала песни, 2 шага на долю (как в движке).
+    const pattern = song.pattern
+    const roleById: Record<string, DrumRole> = { bd: 'kick', sd: 'snare', hh: 'hihat' }
+    const hasNotes = pattern?.tracks.some((t) => t.steps.some(Boolean))
+    if (pattern && hasNotes) {
+      const m = pattern.stepsPerBeat ?? 2
+      const songBeat = song.sections.slice(0, index).reduce((n, s) => n + s.bars, 0) * getState().beatsPerBar + at
+      const offset = (songBeat * m) % pattern.steps
+      const tracks = pattern.tracks
+        .filter((t) => roleById[t.id])
+        .map((t) => ({ role: roleById[t.id], steps: Array.from({ length: m }, (_, i) => !!t.steps[offset + i]) }))
+      return { id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: DEFAULT_KIT_ID, tracks }
+    }
+    // Ничего не назначено — звучит щелчок: пустая сетка 1/4.
+    const roles: DrumRole[] = ['hihat', 'snare', 'kick']
+    return { id, kind: 'break', name, steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: DEFAULT_KIT_ID, tracks: roles.map((role) => ({ role, steps: [false, false, false, false] })) }
   }
 
   function removeFill(index: number, at: number) {
@@ -257,6 +324,7 @@ export function mountSongScreen(
         'div',
         { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)' } },
         h('span', { style: { flex: '1', fontWeight: 'var(--font-weight-bold)' } }, `Филл с доли ${at + 1}`),
+        button('Редактировать', { iconName: 'pencil-simple', onClick: () => editAt(index, at) }),
         iconButton('x', { onClick: () => { fillPicker = null; render() }, ariaLabel: 'Закрыть' })
       ),
       covering
@@ -431,6 +499,8 @@ export function mountSongScreen(
 
   const unsubscribe = subscribe(render)
   render()
+  // Вернулись из редактора бита — показать ту же секцию.
+  if (focusSection !== null) sectionCards[focusSection]?.scrollIntoView({ block: 'center' })
   return () => {
     unsubscribe()
     // Слот у движка один — не держать обновления отсоединённого экрана.
