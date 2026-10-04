@@ -35,10 +35,10 @@ const TOUCH_SLOP_PX = 8
 const EDGE_ZONE_PX = 36
 const EDGE_SCROLL_PX = 8
 
-type Cell = { column: number; row: number }
-type Region = Cell & { width: number; height: number }
+export type Cell = { column: number; row: number }
+export type Region = Cell & { width: number; height: number }
 /** Скопированный блок: размер + включённые клетки в координатах блока ("c:r"). */
-type Clipboard = { width: number; height: number; hits: Set<string> }
+export type Clipboard = { width: number; height: number; hits: Set<string> }
 
 interface Drag {
   pointerId: number
@@ -78,7 +78,7 @@ const cellKey = (column: number, row: number) => `${column}:${row}`
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 const resized = (steps: boolean[], length: number) => Array.from({ length }, (_, i) => !!steps[i])
 
-function captureRegion(tracks: BeatTrack[], region: Region): Clipboard {
+export function captureRegion(tracks: BeatTrack[], region: Region): Clipboard {
   const hits = new Set<string>()
   for (let c = 0; c < region.width; c++) {
     for (let r = 0; r < region.height; r++) {
@@ -92,7 +92,7 @@ function captureRegion(tracks: BeatTrack[], region: Region): Clipboard {
 // вертикали обязан влезть целиком (иначе null — красная рамка), по
 // горизонтали обрезается началом бита и пределом BEAT_MAX_STEPS — как у
 // референса (копия влево у начала кладёт только то, что влезло).
-function fitRegion(clip: { width: number; height: number }, at: Cell, rows: number): Region | null {
+export function fitRegion(clip: { width: number; height: number }, at: Cell, rows: number): Region | null {
   if (at.column + clip.width <= 0 || at.column >= BEAT_MAX_STEPS || at.row < 0 || at.row + clip.height > rows) return null
   const column = Math.max(0, at.column)
   return { column, row: at.row, width: Math.min(at.column + clip.width, BEAT_MAX_STEPS) - column, height: clip.height }
@@ -100,7 +100,7 @@ function fitRegion(clip: { width: number; height: number }, at: Cell, rows: numb
 
 // Вставка перезаписывает весь прямоугольник, включая пустые клетки блока,
 // и может удлинить бит (вставка/копия вправо за концом).
-function pasteBlock(beat: Beat, clip: Clipboard, at: Cell): { edit: BeatGridEdit; region: Region } | null {
+export function pasteBlock(beat: Beat, clip: Clipboard, at: Cell): { edit: BeatGridEdit; region: Region } | null {
   const region = fitRegion(clip, at, beat.tracks.length)
   if (!region) return null
   const steps = Math.max(beat.steps, region.column + region.width)
@@ -118,7 +118,7 @@ function pasteBlock(beat: Beat, clip: Clipboard, at: Cell): { edit: BeatGridEdit
 
 // «Залить строки» — повторить блок по всей длине бита в выбранных строках
 // (в обе стороны от выделения, с сохранением фазы), включая пустые клетки.
-function fillRows(beat: Beat, region: Region): BeatGridEdit {
+export function fillRows(beat: Beat, region: Region): BeatGridEdit {
   const clip = captureRegion(beat.tracks, region)
   const tracks = beat.tracks.map((t, r) => {
     if (r < region.row || r >= region.row + region.height) return t
@@ -740,6 +740,9 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
   return {
     el,
     update(next) {
+      // Экран редактора перерисовывается на любое изменение состояния, а
+      // бит при этом часто тот же — пересобирать сотни клеток незачем.
+      if (next === beat) return
       const prevSteps = beat?.steps ?? next.steps
       beat = next
       const key = next.tracks.map((t) => t.role).join(':')

@@ -1,263 +1,296 @@
-// Минимальный smoke-тест аудио-движка (Уроки v1, п.4: build-check + один
-// тест на тайминг/расписание нот — в v1 не было ни одного теста).
-// Не проверяет реальный звук (Node не умеет Web Audio) — проверяет то, что
-// реально ломалось бы при регрессии в schedule(): счёт долей/тактов и
-// корректную остановку по концу песни, не зависая и не зацикливаясь молча.
+// Тесты аудио-движка (Уроки v1, п.4: в v1 не было ни одного теста). Не
+// проверяют реальный звук — проверяют то, что реально ломалось бы при
+// регрессии в schedule(): счёт долей/тактов, остановку по концу песни,
+// источник звука на каждой доле. Время — фейковые часы (tests/helpers/
+// fakeAudio.ts), поэтому тайминги точные, а не «с запасом».
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAudioEngine } from '../src/engine/audioEngine.ts'
-import { Song } from '../src/types.ts'
+import { Pattern, Section, Song } from '../src/types.ts'
+import { installFakeAudio, settle } from './helpers/fakeAudio.ts'
 
-class FakeAudioParam {
-  value = 0
-  setValueAtTime() {}
-  exponentialRampToValueAtTime() {}
-}
-class FakeAudioContext {
-  private readonly startedAt = Date.now()
-  state: 'running' | 'suspended' = 'running'
-  destination = {}
-  get currentTime() {
-    return (Date.now() - this.startedAt) / 1000
-  }
-  async resume() {
-    this.state = 'running'
-  }
-  createBufferSource() {
-    return { buffer: null as unknown, connect() {}, start() {} }
-  }
-  createOscillator() {
-    return { connect() {}, frequency: new FakeAudioParam(), type: 'triangle', start() {}, stop() {} }
-  }
-  createGain() {
-    return { connect() {}, gain: new FakeAudioParam() }
-  }
-  async decodeAudioData(): Promise<unknown> {
-    return {}
-  }
+console.warn = () => {} // «не удалось загрузить сэмпл» — в тестах без сэмплов это норма
+
+const HH = 'sound/Real Drum Kit/HH.wav'
+const SN = 'sound/Real Drum Kit/SN.wav'
+const BD = 'sound/Real Drum Kit/BD.wav'
+const CLICK = 'osc:1600'
+
+function section(name: string, bars: number, extra: Partial<Section> = {}): Section {
+  return { id: name, name, bars, comment: '', intro: false, ...extra }
 }
 
-function installWebAudioStubs() {
-  ;(globalThis as any).AudioContext = FakeAudioContext
-  ;(globalThis as any).fetch = async () => ({ ok: false }) // сэмплов нет — движок использует fallback-осциллятор
-  ;(globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 4) as unknown as number
-  ;(globalThis as any).cancelAnimationFrame = (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>)
-}
-
-function makeTestSong(): Song {
+function makeSong(extra: Partial<Song> = {}): Song {
   return {
     id: 1,
     name: 'Тестовая песня',
-    bpm: 480, // намеренно быстрый темп — тест короче
-    sections: [{ name: 'VERSE', bars: 1, comment: '', intro: false }], // не intro → не зацикливается
+    bpm: 600,
+    beatsPerBar: 4,
+    beatDivision: 1,
+    sections: [section('VERSE', 1)], // не intro → не зацикливается
     pattern: { steps: 16, tracks: [] },
+    ...extra,
   }
 }
 
-test('движок считает доли/такты и сам останавливается по концу песни', async () => {
-  installWebAudioStubs()
-  const engine = createAudioEngine()
-  const song = makeTestSong()
-  engine.setSong(song)
-  engine.setBpm(song.bpm)
-  engine.setBeatsPerBar(4)
+const track = (id: string, steps: boolean[]) => ({ id, name: id, color: '', sample: '', steps })
+const pattern = (id: string, steps: boolean[], stepsPerBeat?: number): Pattern => ({ steps: steps.length, stepsPerBeat, tracks: [track(id, steps)] })
 
+function setup(t: Parameters<typeof installFakeAudio>[0], opts: Parameters<typeof installFakeAudio>[1] = {}) {
+  const audio = installFakeAudio(t, opts)
+  const engine = createAudioEngine()
+  engine.setBeatsPerBar(4)
+  engine.setBeatDivision(1)
+  t.after(() => engine.stop())
+  return { ...audio, engine }
+}
+
+/** Звуки по долям (доля = 60/bpm, первая — в момент start): на тихой доле — []. */
+function soundsByBeat(played: { time: number; sound: string }[], bpm: number, start = 0.1): string[][] {
+  const beat = 60 / bpm
+  const out: string[][] = []
+  for (const p of played) {
+    const index = Math.floor(Math.round(((p.time - start) / beat) * 1000) / 1000)
+    ;(out[index] ??= []).push(p.sound)
+  }
+  return Array.from(out, (sounds) => sounds ?? [])
+}
+
+test('движок считает доли/такты и сам останавливается по концу песни', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setSong(makeSong())
+  engine.setBpm(480)
   const beatsSeen: number[] = []
-  engine.onPlaybackState((state) => beatsSeen.push(state.beat))
+  engine.onPlaybackState((s) => beatsSeen.push(s.beat))
 
   await engine.start()
-  assert.equal(engine.isPlaying, true, 'после start() движок должен считать себя играющим')
-
-  // 1 такт по 4 доли на 480 BPM = 4 * (60/480) = 0.5s звучания. Даём
-  // ощутимый запас на lookahead/RAF-опрос и проверяем, что к этому моменту
-  // проигрывание само остановилось — не зависло и не зациклилось молча.
-  await new Promise((resolve) => setTimeout(resolve, 900))
-
+  assert.equal(engine.isPlaying, true)
+  // 1 такт по 4 доли на 480 BPM = 0.5 с звучания (+0.1 с до первой доли).
+  advance(700)
   assert.equal(engine.isPlaying, false, 'непетлевая песня должна остановиться сама по окончании тактов')
-
-  // start() синхронно сбрасывает состояние в beat=1 ещё до первого реально
-  // запланированного такта, а по остановке — сбрасывает обратно в beat=1.
-  // Убираем эти повторяющиеся соседние значения и проверяем сам счёт долей.
   const dedup = beatsSeen.filter((beat, i) => beat !== beatsSeen[i - 1])
-  assert.deepEqual(dedup, [1, 2, 3, 4, 1], 'доли должны идти по порядку 1→2→3→4, затем сброс по остановке')
+  assert.deepEqual(dedup, [1, 2, 3, 4, 1], 'доли 1→2→3→4, затем сброс по остановке')
 })
 
-test('изменение BPM во время игры применяется сразу (естественно из-за ухода от React)', async () => {
-  installWebAudioStubs()
-  const engine = createAudioEngine()
-  engine.setBeatsPerBar(4)
-  // intro: true → секция петлевая, играет бесконечно, можно спокойно менять
-  // темп посреди воспроизведения не думая об окончании песни.
-  engine.setSong({ ...makeTestSong(), sections: [{ name: 'V', bars: 100, comment: '', intro: true }] })
-  engine.setBpm(150) // 1 доля = 400мс
-
-  const timestamps: number[] = []
-  const t0 = Date.now()
-  engine.onPlaybackState(() => timestamps.push(Date.now() - t0))
+test('изменение BPM во время игры применяется со следующей доли', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setBpm(150) // доля = 400 мс
+  const times: number[] = []
+  engine.onPlaybackState((s) => s.beat && times.push(Date.now()))
   await engine.start()
-
-  // Уже запланированная на старой скорости доля довисит максимум один её
-  // интервал (400мс) — ждём с запасом, потом меняем темп и смотрим на
-  // интервалы между следующими отметками, а не абсолютный счётчик.
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  engine.setBpm(1200) // 1 доля = 50мс — резкое ускорение прямо во время игры
-  await new Promise((resolve) => setTimeout(resolve, 800))
-  engine.stop()
-
-  const gapsAfterChange = timestamps
-    .filter((t) => t > 900) // с запасом после смены темпа, чтобы захватить только новые интервалы
-    .reduce<number[]>((gaps, t, i, arr) => (i === 0 ? gaps : [...gaps, t - arr[i - 1]]), [])
-
-  assert.ok(gapsAfterChange.length >= 3, `ожидали несколько отметок после ускорения, получили ${gapsAfterChange.length}`)
-  const avgGap = gapsAfterChange.reduce((a, b) => a + b, 0) / gapsAfterChange.length
-  // На 1200 BPM доля идёт раз в 50мс — если бы BPM применялся только на
-  // следующий start() (как было в v1), интервал остался бы ~400мс.
-  assert.ok(avgGap < 150, `ожидали короткие интервалы (~50мс) после ускорения темпа, получили в среднем ${avgGap}мс`)
+  advance(500)
+  engine.setBpm(1200) // доля = 50 мс; уже запланированная доля 0.9 с довисит
+  advance(1500)
+  const gaps = times.filter((t) => t > 950).map((t, i, arr) => (i ? t - arr[i - 1] : 0)).slice(1)
+  assert.ok(gaps.length >= 10, `ожидали много долей после ускорения, получили ${gaps.length}`)
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length
+  // Отрисовка — по кадрам (16 мс), поэтому около 50, а не ровно.
+  assert.ok(avg > 40 && avg < 60, `ожидали ~50 мс между долями, получили ${avg}`)
 })
 
-test('деление доли (subBeat) для кольца метронома считается 0..beatDivision-1 по кругу', async () => {
-  installWebAudioStubs()
-  const engine = createAudioEngine()
-  engine.setBeatsPerBar(4)
+test('деление доли (subBeat) для кольца метронома считается 0..beatDivision-1 по кругу', async (t) => {
+  const { engine, advance } = setup(t)
   engine.setBeatDivision(4)
-  engine.setSong({ ...makeTestSong(), sections: [{ name: 'V', bars: 100, comment: '', intro: true }] })
-  engine.setBpm(240) // 1 доля = 250мс, при делении 4 один тик = 62.5мс
-
+  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setBpm(60) // доля = 1 с, тик = 250 мс — кадры (16 мс) не пропускают тиков
   const subBeats: number[] = []
   engine.onPlaybackState((s) => subBeats.push(s.subBeat))
   await engine.start()
-  await new Promise((resolve) => setTimeout(resolve, 900))
-  engine.stop()
-
+  advance(2200)
   const dedup = subBeats.filter((v, i) => v !== subBeats[i - 1])
-  const hasFullCycle = dedup.some(
-    (_, i) => dedup[i] === 0 && dedup[i + 1] === 1 && dedup[i + 2] === 2 && dedup[i + 3] === 3
-  )
-  assert.ok(hasFullCycle, `ожидали цикл 0→1→2→3 в subBeat, получили: ${dedup.join(',')}`)
+  assert.deepEqual(dedup.slice(0, 9), [0, 1, 2, 3, 0, 1, 2, 3, 0])
 })
 
-test('паттерн без секций (бит из редактора) крутится ровно по своей длине, не по такту движка', async () => {
-  installWebAudioStubs()
-  const engine = createAudioEngine()
-  engine.setBeatsPerBar(4) // такт движка = 4 доли × 2 шага = 8 шагов — длина бита (7) с ним не совпадает
+test('паттерн без секций (бит из редактора) крутится ровно по своей длине, не по такту движка', async (t) => {
+  const { engine, advance } = setup(t)
   const steps = 7
-  engine.setSong({
-    ...makeTestSong(),
-    sections: [], // так бит отдаёт beatEditorScreen.ts: без длины песни, бесконечно
-    pattern: {
-      steps,
-      tracks: [{ id: 'real_kick', name: 'Kick', color: '', sample: '', steps: Array.from({ length: steps }, (_, i) => i === 0) }],
-    },
-  })
-  engine.setBpm(600) // 1 доля = 100мс, шаг = 50мс
-
+  engine.setSong(makeSong({ sections: [], pattern: pattern('real_kick', Array.from({ length: steps }, (_, i) => i === 0)) }))
+  engine.setBpm(300) // доля = 200 мс, шаг (восьмая) = 100 мс
   const seen: number[] = []
   engine.onPlaybackState((s) => {
-    if (engine.isPlaying && s.patternStep !== seen[seen.length - 1]) seen.push(s.patternStep)
+    if (s.patternStep >= 0 && s.patternStep !== seen[seen.length - 1]) seen.push(s.patternStep)
   })
   await engine.start()
-  await new Promise((resolve) => setTimeout(resolve, 1500))
-  engine.stop()
-
-  // start() синхронно сбрасывает patternStep в 0 до первого шага — первый 0
-  // в списке может быть этим сбросом, а не реальным шагом; он не мешает:
-  // дальше каждый следующий шаг обязан быть (предыдущий + 1) mod 7. С
-  // секцией на 2 такта после 0123456 0123456 шло 01 и сброс в 0 — обрыв.
+  advance(3000)
   assert.ok(seen.length > steps * 2, `ожидали больше двух кругов, получили: ${seen.join('')}`)
-  seen.slice(1).forEach((step, i) => {
-    assert.equal(step, (seen[i] + 1) % steps, `шаги должны идти по кругу 0..6 без обрывов, получили: ${seen.join('')}`)
-  })
+  seen.slice(1).forEach((step, i) => assert.equal(step, (seen[i] + 1) % steps, `шаги по кругу 0..6 без обрывов: ${seen.join('')}`))
 })
 
-test('шагов на долю — из паттерна (stepsPerBeat): у бита N/M шаг звучит как 1/M доли', async () => {
-  installWebAudioStubs()
-  const engine = createAudioEngine()
-  engine.setBeatsPerBar(4)
-  const steps = 8
-  engine.setSong({
-    ...makeTestSong(),
-    sections: [],
-    // 8 шагов по 4 на долю — бит 2/4: ровно 2 доли
-    pattern: {
-      steps,
-      stepsPerBeat: 4,
-      tracks: [{ id: 'real_kick', name: 'Kick', color: '', sample: '', steps: Array.from({ length: steps }, (_, i) => i === 0) }],
-    },
-  })
-  engine.setBpm(300) // 1 доля = 200мс, шаг = 50мс
-
-  // Какие шаги паттерна пришлись на каждую долю (ключ — такт:доля).
+test('шагов на долю — из паттерна (stepsPerBeat): у бита N/M шаг звучит как 1/M доли', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setSong(makeSong({ sections: [], pattern: pattern('real_kick', Array.from({ length: 8 }, (_, i) => i === 0), 4) }))
+  engine.setBpm(60) // доля = 1 с, шаг = 250 мс
   const stepsByBeat = new Map<string, Set<number>>()
   engine.onPlaybackState((s) => {
-    if (!engine.isPlaying) return
+    if (!engine.isPlaying || s.patternStep < 0) return
     const key = `${s.bar}:${s.beat}`
     if (!stepsByBeat.has(key)) stepsByBeat.set(key, new Set())
     stepsByBeat.get(key)!.add(s.patternStep)
   })
   await engine.start()
-  await new Promise((resolve) => setTimeout(resolve, 1000))
-  engine.stop()
-
-  // start() синхронно отдаёт сброс (такт 0, доля 1, шаг 0) до первого
-  // настоящего шага — он попадает в ту же долю 0:1 и не мешает.
-  assert.deepEqual([...(stepsByBeat.get('0:1') ?? [])].sort(), [0, 1, 2, 3], 'первая доля — шаги 0..3')
-  assert.deepEqual([...(stepsByBeat.get('0:2') ?? [])].sort(), [4, 5, 6, 7], 'вторая доля — шаги 4..7')
-  assert.deepEqual([...(stepsByBeat.get('0:3') ?? [])].sort(), [0, 1, 2, 3], 'бит на 2 доли пошёл по кругу')
+  advance(3100)
+  assert.deepEqual([...stepsByBeat.get('0:1')!].sort(), [0, 1, 2, 3], 'первая доля — шаги 0..3')
+  assert.deepEqual([...stepsByBeat.get('0:2')!].sort(), [4, 5, 6, 7], 'вторая доля — шаги 4..7')
+  assert.deepEqual([...stepsByBeat.get('0:3')!].sort(), [0, 1, 2, 3], 'бит на 2 доли пошёл по кругу')
 })
 
-test('биты в секциях: грув секции по кругу, филл с доли вместо него и обрезается концом секции', async () => {
-  installWebAudioStubs()
-  // Сэмплов в тесте нет — движок играет запасной осциллятор с частотой
-  // инструмента (config.ts): bd 120, sd 220, hh 450. По ней и узнаём, что
-  // прозвучало.
-  const played: { time: number; freq: number }[] = []
-  class RecordingAudioContext extends FakeAudioContext {
-    createOscillator() {
-      const osc = super.createOscillator()
-      return {
-        ...osc,
-        start: (time = 0) => {
-          played.push({ time, freq: osc.frequency.value })
-        },
-      }
-    }
-  }
-  ;(globalThis as any).AudioContext = RecordingAudioContext
-  const nameByFreq: Record<number, string> = { 120: 'bd', 220: 'sd', 450: 'hh' }
-
-  const engine = createAudioEngine()
-  engine.setBeatsPerBar(4)
-  engine.setSong({
-    ...makeTestSong(),
-    // паттерн песни — bd на каждую долю
-    pattern: { steps: 2, tracks: [{ id: 'bd', name: 'BD', color: '', sample: '', steps: [true, false] }] },
-    sections: [
-      {
-        name: 'A',
-        bars: 1,
-        comment: '',
-        intro: false,
-        // грув — hh на каждую долю (бит 1/2)
-        groove: { steps: 2, stepsPerBeat: 2, tracks: [{ id: 'hh', name: 'HH', color: '', sample: '', steps: [true, false] }] },
-        // филл на 2 доли (бит 2/2, sd на каждом шаге) с последней доли — во
-        // второй доле секция уже кончилась, он обрезается
-        fillPatterns: [
-          { at: 3, pattern: { steps: 4, stepsPerBeat: 2, tracks: [{ id: 'sd', name: 'SD', color: '', sample: '', steps: [true, true, true, true] }] } },
-        ],
-      },
-      { name: 'B', bars: 1, comment: '', intro: false },
-    ],
-  })
-  engine.setBpm(600) // 1 доля = 100мс; 2 такта по 4 доли = 0.8с, потом стоп
-
+test('биты в секциях: грув секции по кругу, филл с доли вместо него и обрезается концом секции', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  engine.setSong(
+    makeSong({
+      // паттерн песни — bd на каждую долю
+      pattern: pattern('bd', [true, false]),
+      sections: [
+        section('A', 1, {
+          // грув — hh на каждую долю (бит 1/2)
+          groove: pattern('hh', [true, false], 2),
+          // филл на 2 доли (бит 2/2, sd на каждом шаге) с последней доли —
+          // во второй доле секция уже кончилась, он обрезается
+          fillPatterns: [{ at: 3, pattern: pattern('sd', [true, true, true, true], 2) }],
+        }),
+        section('B', 1),
+      ],
+    })
+  )
+  engine.setBpm(600)
   await engine.start()
-  await new Promise((resolve) => setTimeout(resolve, 1200))
-  engine.stop()
-
-  const heard = played.sort((a, b) => a.time - b.time).map((p) => nameByFreq[p.freq] ?? `?${p.freq}`)
+  advance(1200)
   assert.deepEqual(
-    heard,
-    ['hh', 'hh', 'hh', 'sd', 'sd', 'bd', 'bd', 'bd', 'bd'],
+    played.sort((a, b) => a.time - b.time).map((p) => p.sound),
+    [HH, HH, HH, SN, SN, BD, BD, BD, BD],
     'доли 1–3 — грув секции A, доля 4 — филл (вторая его доля обрезана), секция B — паттерн песни'
   )
+})
+
+test('пустой бит или филл секции — пауза, пустой паттерн песни — щелчок', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  engine.setSong(
+    makeSong({
+      sections: [
+        section('A', 1, {
+          groove: pattern('hh', [true, false], 2),
+          // филл без единой ноты на долю 2 — пауза (решение пользователя)
+          fillPatterns: [{ at: 1, pattern: pattern('real_kick', [false, false, false, false], 4) }],
+        }),
+        // пустой грув на всю секцию — тоже пауза
+        section('B', 1, { groove: pattern('hh', [false, false], 2) }),
+        // без грува — паттерн песни, он пустой — щелчок
+        section('C', 1),
+      ],
+    })
+  )
+  engine.setBpm(600)
+  await engine.start()
+  advance(1500)
+  const beats = soundsByBeat(played, 600)
+  assert.deepEqual(beats.slice(0, 4), [[HH], [], [HH], [HH]], 'секция A: на доле 2 пауза вместо щелчка')
+  assert.deepEqual(beats.slice(4, 8), [[], [], [], []], 'секция B: пустой грув — тишина')
+  assert.deepEqual(beats.slice(8, 12), [[CLICK], [CLICK], [CLICK], [CLICK]], 'секция C: щелчок')
+})
+
+test('убавили долей в такте во время игры — счёт не уходит за такт, песня идёт дальше', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setSong(makeSong({ sections: [section('A', 2), section('B', 2)] }))
+  engine.setBpm(120) // доля = 500 мс
+  const beats: number[] = []
+  const bars: number[] = []
+  engine.onPlaybackState((s) => {
+    beats.push(s.beat)
+    bars.push(s.bar)
+  })
+  await engine.start()
+  // На кольце доля 3 — планировщик уже ушёл на долю 4: тот самый случай,
+  // когда с === счёт рос без конца (1…11, такт навсегда 0).
+  while (beats[beats.length - 1] !== 3) advance(1)
+  advance(50)
+  engine.setBeatsPerBar(3)
+  advance(4000)
+  assert.ok(Math.max(...beats) <= 4, `доля ушла за предел такта: ${Math.max(...beats)}`)
+  assert.ok(Math.max(...bars) >= 3, `такты должны идти дальше, дошли до ${Math.max(...bars)}`)
+})
+
+test('двойной Play, пока контекст просыпается, — один планировщик, Стоп глушит всё', async (t) => {
+  const { engine, advance, played } = setup(t, { suspended: true, resumeDelayMs: 50 })
+  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setBpm(600)
+  const first = engine.start()
+  const second = engine.start() // двойной тап до того, как resume() закончился
+  advance(50)
+  await Promise.all([first, second])
+  advance(300)
+  const perBeat = soundsByBeat(played, 600, played[0].time)
+  assert.ok(perBeat.every((sounds) => sounds.length === 1), 'на каждой доле — один щелчок, не два')
+  engine.stop()
+  const before = played.length
+  advance(500)
+  assert.equal(played.length, before, 'после Стоп движок не должен планировать ноты')
+})
+
+test('Play, когда уже играет, ничего не перезапускает', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setBpm(600)
+  const beats: number[] = []
+  engine.onPlaybackState((s) => beats.push(s.beat))
+  await engine.start()
+  advance(250)
+  await engine.start()
+  advance(450)
+  const dedup = beats.filter((b, i) => b !== beats[i - 1])
+  assert.deepEqual(dedup.slice(0, 6), [1, 2, 3, 4, 1, 2], 'счёт идёт дальше, без сброса на долю 1')
+})
+
+test('Стоп, пока контекст просыпается, — игра не начинается', async (t) => {
+  const { engine, advance, played } = setup(t, { suspended: true, resumeDelayMs: 50 })
+  const start = engine.start()
+  engine.stop()
+  advance(50)
+  await start
+  advance(300)
+  assert.equal(engine.isPlaying, false)
+  assert.equal(played.length, 0)
+})
+
+test('вкладку придушили — пропущенные доли не звучат пачкой, песня остаётся в своём времени', async (t) => {
+  const { engine, advance, jump, played } = setup(t)
+  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setBpm(600) // доля = 100 мс, такт = 400 мс
+  const bars: number[] = []
+  engine.onPlaybackState((s) => bars.push(s.bar))
+  await engine.start()
+  advance(300)
+  jump(2000) // 2 с без единого таймера
+  const resumedAt = Date.now() / 1000
+  advance(300)
+  const late = played.filter((p) => p.time > 0.4 && p.time < resumedAt - 0.05)
+  assert.equal(late.length, 0, `пропущенные доли прозвучали пачкой: ${late.length}`)
+  // 2.6 с от старта = 6.5 тактов по 0.4 с — счёт тактов не стоял.
+  assert.ok(Math.max(...bars) >= 5, `такты должны идти и во время паузы, дошли до ${Math.max(...bars)}`)
+})
+
+test('Play доступен для щелчка сразу, для паттерна и голоса — после загрузки сэмплов', async (t) => {
+  const { engine } = setup(t, { samples: true })
+  assert.equal(engine.samplesLoaded, false)
+  assert.equal(engine.canStart, true, 'щелчок синтезируется — сэмплы не нужны')
+  engine.setSong(makeSong({ pattern: pattern('bd', [true, false]) }))
+  assert.equal(engine.canStart, false, 'паттерну нужны сэмплы')
+  engine.setSong(makeSong())
+  engine.setVoiceCount(true)
+  assert.equal(engine.canStart, false, 'счёту голосом нужны сэмплы')
+  await settle()
+  assert.equal(engine.samplesLoaded, true)
+  assert.equal(engine.canStart, true)
+})
+
+test('отписка от подсветки освобождает слот, только если он всё ещё свой', (t) => {
+  const { engine } = setup(t)
+  const calls: string[] = []
+  const releaseA = engine.onPlaybackState(() => calls.push('A'))
+  engine.onPlaybackState(() => calls.push('B'))
+  releaseA() // слот уже у B — A не должен его снять
+  engine.stop() // сбрасывает состояние — уведомляет слушателя
+  assert.deepEqual(calls, ['B'])
 })

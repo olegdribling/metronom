@@ -24,7 +24,7 @@ export interface Pattern {
   tracks: PatternTrack[]
 }
 
-// Библиотека битов/брейков (личная, локальная — data/beatsLibrary.ts).
+// Библиотека битов/брейков — в аккаунте пользователя (data/userLibrary.ts).
 // Дорожка хранит РОЛЬ барабана, а не сэмпл напрямую — сэмпл резолвится через
 // DRUM_KITS (config.ts) при проигрывании, см. data/resolveBeat.ts. Так выбор
 // кита позже не потребует переделки этой модели.
@@ -74,6 +74,11 @@ export interface SectionFill {
 }
 
 export interface Section {
+  /** Стабильный id секции внутри песни — по нему экран песни помнит, какую
+   * секцию правят и где открыт выбор филла (индексы сдвигаются при
+   * удалении/перетаскивании и при правке с другого устройства). У секций,
+   * сохранённых до появления id, его даёт normalizeSong() (data/songs.ts). */
+  id: string
   name: string
   bars: number
   comment: string
@@ -93,17 +98,21 @@ export interface Song {
   id: number
   name: string
   bpm: number
+  /** Размер такта песни — как у кольца метронома: долей в такте и деление
+   * доли. Открыли песню — метроном переключился на него (app.ts). Старым
+   * песням normalizeSong() (data/songs.ts) ставит 4/4. */
+  beatsPerBar: number
+  beatDivision: number
   sections: Section[]
   pattern: Pattern
 }
 
-// Плейлист — список песен в аккаунте пользователя:
-// users/{uid}/playlists/{id} (data/userLibrary.ts). Общего доступа по коду
-// пока нет — отложено отдельной задачей.
-export interface Playlist {
+// Плейлист в аккаунте пользователя: users/{uid}/playlists/{id}, песни —
+// отдельными документами в его подколлекции songs (data/userLibrary.ts).
+// Общего доступа по коду пока нет — отложено отдельной задачей.
+export interface PlaylistInfo {
   id: string
   name: string
-  songs: Song[]
 }
 
 export interface PlaybackState {
@@ -112,13 +121,15 @@ export interface PlaybackState {
   /** Позиция внутри текущей доли, 0..beatDivision-1 — для кольца метронома
    * (крупные точки = доли, мелкие = деление доли). Не связано с patternStep. */
   subBeat: number
+  /** Шаг паттерна песни на этой доле; -1 — играет не паттерн песни (бит или
+   * филл секции, пауза, щелчок). */
   patternStep: number
-  nextSectionName: string | null
 }
 
-export interface SectionRange {
-  start: number
-  end: number
+/** Размер такта: долей в такте × деление доли (кольцо метронома, песня). */
+export interface Meter {
+  beatsPerBar: number
+  beatDivision: number
 }
 
 export interface SectionFormData {

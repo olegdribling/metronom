@@ -4,8 +4,8 @@
 // в публичный репозиторий.
 //
 // Проект: Metronom (metronom-a2035), Firestore — australia-southeast1
-// (Sydney), Rules — доступ по знанию кода плейлиста (см. план). Настроено
-// 2026-09-28.
+// (Sydney), вход через Google; Rules — каждый пользователь только к своему
+// users/{uid}/** (копия — firestore.rules в корне репозитория).
 export const firebaseConfig = {
   apiKey: 'AIzaSyBkQCbd1K08rN26BQf4l59pruccHZ_fts4',
   authDomain: 'metronom-a2035.firebaseapp.com',

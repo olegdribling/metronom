@@ -46,10 +46,13 @@ const SHAPES: Record<DrumRole, string> = {
     <path d="M12 10.2V21M8 21.5l4-3 4 3"/>`,
 }
 
+// Статичная разметка из SHAPES выше, без пользовательских данных.
+export const drumSvgMarkup = (role: DrumRole, strokeWidth = 1.6): string =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SHAPES[role]}</svg>`
+
 export function drumIcon(role: DrumRole): HTMLElement {
   const el = h('span', { className: 'drum-icon', title: DRUM_ROLE_LABELS[role] })
-  // Статичная разметка из SHAPES выше, без пользовательских данных.
-  el.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SHAPES[role]}</svg>`
+  el.innerHTML = drumSvgMarkup(role)
   return el
 }

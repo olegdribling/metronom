@@ -14,7 +14,9 @@ const variantClass: Record<ButtonVariant, string> = {
 
 export function button(
   label: string | Node,
-  opts: { variant?: ButtonVariant; onClick?: () => void; disabled?: boolean; iconName?: string } = {}
+  /** ariaLabel — для кнопки только с иконкой (label пустой): иначе экранный
+   * диктор прочтёт просто «кнопка». */
+  opts: { variant?: ButtonVariant; onClick?: () => void; disabled?: boolean; iconName?: string; ariaLabel?: string } = {}
 ): HTMLButtonElement {
   const children: Node[] = []
   if (opts.iconName) children.push(icon(opts.iconName))
@@ -26,6 +28,7 @@ export function button(
       className: `btn${variantClass[opts.variant ?? 'default']}`,
       onClick: opts.disabled ? undefined : opts.onClick,
       disabled: opts.disabled,
+      'aria-label': opts.ariaLabel,
     },
     ...children
   )

@@ -3,6 +3,7 @@
 // напрямую в DOM (горячий путь), как и биты на экране метронома.
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
+import { accountGate } from '../components/signInCard.ts'
 import { PATTERN_INSTRUMENTS, PATTERN_STEPS } from '../config.ts'
 import { Pattern, PatternTrack, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
@@ -33,8 +34,7 @@ export function mountPatternScreen(container: HTMLElement, songId: number, engin
   }
 
   function updatePattern(pattern: Pattern) {
-    const state = getState()
-    saveSongs(state.songs.map((s) => (s.id === songId ? { ...s, pattern } : s)))
+    saveSongs(getState().songs.map((s) => (s.id === songId ? { ...s, pattern } : s)))
   }
 
   function toggleStep(trackId: string, stepIndex: number) {
@@ -47,46 +47,48 @@ export function mountPatternScreen(container: HTMLElement, songId: number, engin
     updatePattern({ ...pattern, tracks })
   }
 
-  function clearPattern() {
-    const song = currentSong()
-    if (!song) return
-    updatePattern(normalizePattern(undefined))
+  function showPlayhead(step: number) {
+    stepCells.forEach((cell) => {
+      cell.classList.toggle('step--current', engine.isPlaying && Number(cell.dataset.step) === step)
+    })
   }
 
   function render() {
+    stepCells = []
+    const gate = accountGate('Войдите — песни и плейлисты хранятся в вашем аккаунте и видны на любом устройстве.')
+    if (gate) return mount(container, gate)
     const song = currentSong()
     if (!song) {
-      mount(container, h('p', {}, 'Песня не найдена.'))
-      return
+      return mount(
+        container,
+        getState().songsLoaded ? h('p', {}, 'Песня не найдена.') : h('p', { className: 'text-center text-muted' }, 'Загрузка…')
+      )
     }
     const pattern = normalizePattern(song.pattern)
-    stepCells = []
 
-    const grid = h('div', {
-      style: {
-        display: 'grid',
-        gridTemplateColumns: `64px repeat(${pattern.steps}, minmax(2rem, 1fr))`,
-        gap: 'var(--space-1)',
-        alignItems: 'center',
-        overflowX: 'auto',
-      },
-    })
+    // key — mount() вернёт сетке горизонтальную прокрутку после
+    // перерисовки (на телефоне 16 шагов не влезают, и каждый тап иначе
+    // отбрасывал ленту к первому шагу).
+    const grid = h('div', { className: 'pattern-grid', key: 'pattern-grid' })
+    grid.style.setProperty('--pattern-steps', String(pattern.steps))
 
     grid.append(h('div', {}))
     for (let i = 0; i < pattern.steps; i++) {
-      grid.append(h('div', { style: { textAlign: 'center', fontSize: 'var(--font-size-caption)', color: 'var(--color-text-muted)' } }, String(i + 1)))
+      grid.append(h('div', { className: 'pattern-grid__num' }, String(i + 1)))
     }
 
     pattern.tracks.forEach((track) => {
-      grid.append(h('div', { style: { fontFamily: 'monospace', fontWeight: 'var(--font-weight-bold)', textAlign: 'right', paddingRight: 'var(--space-2)' } }, track.name))
+      grid.append(h('div', { className: 'pattern-grid__label' }, track.name))
       track.steps.forEach((active, stepIndex) => {
         const cell = h('button', {
           type: 'button',
           className: `step${active ? ' step--on' : ''}`,
-          style: active ? { backgroundColor: track.color } : {},
+          'aria-label': `${track.name}, шаг ${stepIndex + 1}`,
+          'aria-pressed': String(active),
           dataset: { track: track.id, step: String(stepIndex) },
           onClick: () => toggleStep(track.id, stepIndex),
         })
+        if (active) cell.style.setProperty('--cell-color', track.color)
         stepCells.push(cell)
         grid.append(cell)
       })
@@ -96,25 +98,25 @@ export function mountPatternScreen(container: HTMLElement, songId: number, engin
       container,
       h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
+        { className: 'stack stack--4' },
         h(
           'div',
-          { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-          h('span', { style: { color: 'var(--color-text-sub)' } }, song.name),
-          button('Очистить', { onClick: clearPattern })
+          { className: 'row row--between' },
+          h('span', { className: 'text-sub' }, song.name),
+          button('Очистить', { onClick: () => updatePattern(normalizePattern(undefined)) })
         ),
         grid
       )
     )
+    showPlayhead(engine.playbackState.patternStep)
   }
 
-  engine.onPlaybackState((playback) => {
-    stepCells.forEach((cell) => {
-      cell.classList.toggle('step--current', engine.isPlaying && Number(cell.dataset.step) === playback.patternStep)
-    })
-  })
+  const releasePlayback = engine.onPlaybackState((playback) => showPlayhead(playback.patternStep))
 
   const unsubscribe = subscribe(render)
   render()
-  return unsubscribe
+  return () => {
+    unsubscribe()
+    releasePlayback()
+  }
 }

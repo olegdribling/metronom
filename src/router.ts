@@ -46,9 +46,13 @@ export function createRouter(): Router {
       const match = route.pattern.exec(path)
       if (match) {
         const params: Record<string, string> = {}
-        route.keys.forEach((key, i) => {
-          params[key] = decodeURIComponent(match[i + 1])
-        })
+        try {
+          route.keys.forEach((key, i) => {
+            params[key] = decodeURIComponent(match[i + 1])
+          })
+        } catch {
+          break // битый %-код в адресе (/beats/%E0%A4) — как неизвестный путь
+        }
         route.handler(params)
         return
       }

@@ -17,13 +17,13 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
     if (gate) return gate
     return h(
       'div',
-      { className: 'card', style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)' } },
+      { className: 'card row row--3' },
       icon('user-circle'),
-      h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } }, 'Аккаунт Google'),
-        h('div', { style: { fontWeight: 'var(--font-weight-bold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, getState().user!.name)
+      h('div', { className: 'grow min-w-0' },
+        h('div', { className: 'text-small text-sub' }, 'Аккаунт Google'),
+        h('div', { className: 'text-bold text-ellipsis' }, getState().user!.name)
       ),
-      button('Выйти', { onClick: () => void signOut() })
+      button('Выйти', { onClick: () => signOut().catch((err) => console.error('Не удалось выйти из аккаунта:', err)) })
     )
   }
 
@@ -33,34 +33,24 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
       container,
       h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
+        { className: 'stack stack--4' },
         renderAccount(),
         h(
           'div',
-          { className: 'card', style: { display: 'flex', flexDirection: 'column' } },
-          h('div', { style: { padding: 'var(--space-3)', fontWeight: 'var(--font-weight-bold)' } }, 'Тема оформления'),
+          { className: 'card settings-list' },
+          h('div', { className: 'settings-list__title' }, 'Тема оформления'),
           ...THEMES.map((theme) =>
             h(
               'button',
-              {
-                type: 'button',
-                className: 'list-row',
-                style: { borderRadius: '0', borderLeft: 'none', borderRight: 'none' },
-                onClick: () => setThemeId(theme.id),
-              },
-              h('span', { style: { flex: '1', textAlign: 'left' } }, theme.name),
+              { type: 'button', className: 'list-row list-row--flat', onClick: () => setThemeId(theme.id) },
+              h('span', { className: 'grow' }, theme.name),
               state.themeId === theme.id ? icon('check-circle') : null
             )
           ),
           h(
             'button',
-            {
-              type: 'button',
-              className: 'list-row',
-              style: { borderRadius: '0', borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none' },
-              onClick: () => setVoiceCues(!state.voiceCues),
-            },
-            h('span', { style: { flex: '1', textAlign: 'left' } }, 'Голос при смене секции'),
+            { type: 'button', className: 'list-row list-row--flat list-row--last', onClick: () => setVoiceCues(!state.voiceCues) },
+            h('span', { className: 'grow' }, 'Голос при смене секции'),
             h('span', { className: `switch${state.voiceCues ? ' switch--on' : ''}` })
           )
         )

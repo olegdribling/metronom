@@ -18,7 +18,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}', ...usedSamplePatterns],
+        // woff2 — шрифт иконок Phosphor (main.ts). Его же SVG/TTF/WOFF Vite
+        // кладёт в dist (на них ссылается CSS пакета), но браузеры берут
+        // woff2 — остальные в прекеш не нужны (SVG-шрифт — 2.9 MB).
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}', ...usedSamplePatterns],
+        globIgnores: ['**/Phosphor-Bold-*.svg'],
         navigateFallback: '/index.html',
       },
       manifest: {

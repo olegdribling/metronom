@@ -25,17 +25,22 @@ interface VisualEvent {
   bar?: number
   patternStep?: number
   subBeat?: number
-  nextSectionName?: string | null
 }
 
-const EMPTY_PLAYBACK_STATE: PlaybackState = { beat: 1, bar: 0, subBeat: 0, patternStep: 0, nextSectionName: null }
+const EMPTY_PLAYBACK_STATE: PlaybackState = { beat: 1, bar: 0, subBeat: 0, patternStep: -1 }
 
-const patternHasActiveSteps = (pattern: Song['pattern'] | undefined) =>
+const patternHasActiveSteps = (pattern: Pattern | undefined) =>
   !!pattern?.tracks?.some((track) => track.steps.some(Boolean))
 
 const totalBars = (song: Song) => song.sections.reduce((s, sec) => s + sec.bars, 0)
 
 const stepsPerBeatOf = (pattern: Pattern) => pattern.stepsPerBeat ?? 2
+
+// Доля, опоздавшая больше чем на это, пропускается, а не играется: вкладку
+// придушили (фон, сон), и планировщик проснулся, когда доля уже прошла. Без
+// этого все пропущенные доли прозвучали бы разом, пачкой. Счёт долей и
+// тактов при этом идёт дальше — песня остаётся в своём времени.
+const LATE_SKIP_SEC = 0.05
 
 /** Что звучит на доле: паттерн и шаг, с которого он начинается на этой доле. */
 interface SoundSource {
@@ -59,6 +64,7 @@ export interface AudioEngine {
    * песни/паттерна и без счёта голосом) удары внутри доли тоже звучат —
    * обычным кликом, в отличие от акцента на самой доле. */
   setBeatDivision(n: number): void
+  /** Повторный вызов, пока движок запускается или играет, ничего не делает. */
   start(): Promise<void>
   stop(): void
   /** Проиграть один сэмпл прямо сейчас, вне расписания — прослушка в
@@ -66,13 +72,19 @@ export interface AudioEngine {
    * трогает воспроизведение и его состояние. */
   previewSound(instrumentId: string): void
   readonly isPlaying: boolean
+  readonly bpm: number
   readonly beatsPerBar: number
   readonly beatDivision: number
   readonly samplesLoaded: boolean
-  onPlaybackState(cb: (s: PlaybackState) => void): void
+  /** Можно ли жать Play: простому щелчку сэмплы не нужны (он
+   * синтезируется), паттернам и голосу — нужны, ждём их загрузки. */
+  readonly canStart: boolean
+  /** Последнее состояние воспроизведения, отданное экранам. */
+  readonly playbackState: PlaybackState
+  /** Слот один — у экрана с подсветкой. Возвращает отписку: экран при уходе
+   * освобождает слот, если тот всё ещё его. */
+  onPlaybackState(cb: (s: PlaybackState) => void): () => void
   onPlayingChange(cb: (playing: boolean) => void): void
-  onBeatsPerBarChange(cb: (n: number) => void): void
-  onBeatDivisionChange(cb: (n: number) => void): void
   onSamplesLoadedChange(cb: (loaded: boolean) => void): void
 }
 
@@ -87,6 +99,13 @@ export function createAudioEngine(): AudioEngine {
   let beatsPerBar = 4
   let beatDivision = 4
   let isPlaying = false
+  // start() ждёт resume() контекста — в это время повторный Play не должен
+  // запустить второй планировщик (двойной тап при первом запуске).
+  let starting = false
+  // Номер запуска: schedule() и цикл отрисовки помнят свой и молча
+  // выходят, если с тех пор был stop() или новый start(). Так ни один
+  // таймер старого запуска не доживёт до следующего.
+  let runId = 0
   let bpm: number = CONFIG.DEFAULT_BPM
   let currentSong: Song | null = null
   let voiceCues = false
@@ -96,8 +115,6 @@ export function createAudioEngine(): AudioEngine {
 
   let playbackListener: ((s: PlaybackState) => void) | null = null
   let playingListener: ((p: boolean) => void) | null = null
-  let beatsPerBarListener: ((n: number) => void) | null = null
-  let beatDivisionListener: ((n: number) => void) | null = null
 
   // 'tick'-события несут только subBeat и должны сливаться с уже известными
   // beat/bar/patternStep, а не затирать их — поэтому храним последнее
@@ -124,15 +141,21 @@ export function createAudioEngine(): AudioEngine {
     return audioContext
   }
 
-  sampleLoader.prefetchAll()
   // Фикс относительно v1: там decode всех сэмплов запускался только при
-  // выборе песни, поэтому голый метроном без песни был неиграбелен (кнопка
-  // Play заблокирована до samplesLoaded). Метроном — первая фича по плану,
-  // должна работать без песни, поэтому декодируем сразу при создании движка,
-  // через тот же ensureAudioContext — один AudioContext на всё приложение,
-  // а не по одному на препрогрузку и на воспроизведение.
+  // выборе песни, поэтому голый метроном без песни был неиграбелен. Здесь
+  // декодируем сразу при создании движка, через тот же ensureAudioContext —
+  // один AudioContext на всё приложение. Play для простого щелчка их не
+  // ждёт (canStart).
   ensureAudioContext()
   void sampleLoader.preloadAllSamples()
+
+  function songHasNotes(song: Song | null): boolean {
+    return (
+      !!song &&
+      (patternHasActiveSteps(song.pattern) ||
+        song.sections.some((sec) => patternHasActiveSteps(sec.groove) || sec.fillPatterns?.some((f) => patternHasActiveSteps(f.pattern))))
+    )
+  }
 
   // Системный (синтезированный) клик — не сэмпл. Акцент — доли такта
   // (крупные точки кольца), обычный — удары внутри доли (деление, мелкие
@@ -168,13 +191,15 @@ export function createAudioEngine(): AudioEngine {
       source.start(time)
       return
     }
+    // Сэмпл не загрузился — запасной осциллятор, с якорем на time (см.
+    // clickSound: иначе огибающая начиналась бы от «сейчас»).
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
     gain.connect(ctx.destination)
     osc.type = 'triangle'
     osc.frequency.value = instrumentFrequencyMap[instrumentId] || 220
-    gain.gain.value = 0.5
+    gain.gain.setValueAtTime(0.5, time)
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12)
     osc.start(time)
     osc.stop(time + 0.12)
@@ -206,9 +231,9 @@ export function createAudioEngine(): AudioEngine {
     return { pattern, firstStep: totalBeatsPassed * stepsPerBeatOf(pattern), loop: true, isSongPattern: true }
   }
 
-  function schedule() {
+  function schedule(run: number) {
     const ctx = audioContext
-    if (!ctx) return
+    if (!ctx || run !== runId) return
     const ct = ctx.currentTime
     const lookahead = 0.1
     const songTotalBars = currentSong ? totalBars(currentSong) : 0
@@ -228,94 +253,94 @@ export function createAudioEngine(): AudioEngine {
       const scheduledTime = nextNoteTime
       const currentBeatValue = beat
       const currentBarValue = bar
-      const totalBeatsPassed = currentBarValue * beatsPerBar + (currentBeatValue - 1)
 
-      const sectionIdx = sectionRanges.findIndex(
-        (r) => currentBarValue >= r.start && currentBarValue <= r.end
-      )
-      const beatInSection =
-        sectionIdx >= 0 ? (currentBarValue - sectionRanges[sectionIdx].start) * beatsPerBar + (currentBeatValue - 1) : 0
-      const source = soundSourceAt(sectionIdx, beatInSection, totalBeatsPassed)
-      const usePatternSounds = !!source && patternHasActiveSteps(source.pattern)
-      const isLastBarOfSection = sectionIdx >= 0 && currentBarValue === sectionRanges[sectionIdx].end
-      const hasNextSection = sectionIdx >= 0 && sectionIdx < (currentSong?.sections.length ?? 0) - 1
-      const nextSection = hasNextSection ? currentSong!.sections[sectionIdx + 1] : null
-      const nextSectionName = nextSection ? nextSection.name : sectionIdx >= 0 ? 'END' : null
+      if (scheduledTime >= ct - LATE_SKIP_SEC) {
+        const totalBeatsPassed = currentBarValue * beatsPerBar + (currentBeatValue - 1)
+        const sectionIdx = sectionRanges.findIndex((r) => currentBarValue >= r.start && currentBarValue <= r.end)
+        const beatInSection =
+          sectionIdx >= 0 ? (currentBarValue - sectionRanges[sectionIdx].start) * beatsPerBar + (currentBeatValue - 1) : 0
+        const source = soundSourceAt(sectionIdx, beatInSection, totalBeatsPassed)
+        const usePatternSounds = !!source && patternHasActiveSteps(source.pattern)
+        // Бит или филл секции без единой ноты — пауза (решение пользователя),
+        // а не щелчок вместо него. Пустой паттерн песни — как и раньше, щелчок.
+        const silent = !!source && !source.isSongPattern && !usePatternSounds
+        const isLastBarOfSection = sectionIdx >= 0 && currentBarValue === sectionRanges[sectionIdx].end
+        const hasNextSection = sectionIdx >= 0 && sectionIdx < (currentSong?.sections.length ?? 0) - 1
+        const nextSection = hasNextSection ? currentSong!.sections[sectionIdx + 1] : null
+        const nextSectionName = nextSection ? nextSection.name : sectionIdx >= 0 ? 'END' : null
 
-      if (voiceCues && isLastBarOfSection) {
-        if (currentBeatValue === 1) {
-          playInstrumentSound(`voice_${nextSectionName}`, scheduledTime)
-        } else {
-          playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+        // Голос перехода к следующей секции звучит и поверх паузы.
+        if (voiceCues && isLastBarOfSection) {
+          if (currentBeatValue === 1) {
+            playInstrumentSound(`voice_${nextSectionName}`, scheduledTime)
+          } else {
+            playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+          }
         }
-      }
 
-      if (usePatternSounds) {
-        const { pattern } = source!
-        const patternLength = pattern.steps || PATTERN_STEPS
-        // Шагов на долю — из паттерна: у бита это M его размера N/M, у
-        // паттерна песни — 2 (восьмые), как было всегда.
-        const subDiv = stepsPerBeatOf(pattern)
-        const subDuration = 60 / bpm / subDiv
+        if (usePatternSounds) {
+          const { pattern } = source!
+          const patternLength = pattern.steps || PATTERN_STEPS
+          // Шагов на долю — из паттерна: у бита это M его размера N/M, у
+          // паттерна песни — 2 (восьмые), как было всегда.
+          const subDiv = stepsPerBeatOf(pattern)
+          const subDuration = 60 / bpm / subDiv
 
-        for (let sub = 0; sub < subDiv; sub++) {
-          const subTime = scheduledTime + sub * subDuration
-          const step = source!.firstStep + sub
-          const stepIndex = source!.loop ? step % patternLength : step
+          for (let sub = 0; sub < subDiv; sub++) {
+            const subTime = scheduledTime + sub * subDuration
+            const step = source!.firstStep + sub
+            const stepIndex = source!.loop ? step % patternLength : step
 
-          if (stepIndex < patternLength) {
-            pattern.tracks.forEach((track) => {
-              if (track.steps[stepIndex]) playInstrumentSound(track.id, subTime)
+            if (stepIndex < patternLength) {
+              pattern.tracks.forEach((track) => {
+                if (track.steps[stepIndex]) playInstrumentSound(track.id, subTime)
+              })
+            }
+
+            visualQueue.push({
+              time: subTime,
+              type: 'beat',
+              beat: currentBeatValue,
+              bar: currentBarValue,
+              patternStep: source!.isSongPattern ? stepIndex : -1,
             })
           }
-
-          visualQueue.push({
-            time: subTime,
-            type: 'beat',
-            beat: currentBeatValue,
-            bar: currentBarValue,
-            patternStep: source!.isSongPattern ? stepIndex : -1,
-            nextSectionName,
-          })
+        } else {
+          visualQueue.push({ time: scheduledTime, type: 'beat', beat: currentBeatValue, bar: currentBarValue, patternStep: -1 })
+          // «Счёт голосом» вместо клика — только когда нет активного паттерна
+          // (иначе счёт и паттерн будут спорить друг с другом за долю).
+          // Сэмплов голоса хватает на 1–8; при большем числе долей в такте
+          // просто не считаем сверх восьмой, клик тоже не проигрывается —
+          // так честнее, чем молчаливо повторять "8" не в такт.
+          if (!silent && voiceCount && currentBeatValue <= 8) {
+            playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+          } else if (!silent && !voiceCount) {
+            clickSound(scheduledTime, true) // доля такта — всегда акцент
+          }
         }
-      } else {
-        visualQueue.push({
-          time: scheduledTime,
-          type: 'beat',
-          beat: currentBeatValue,
-          bar: currentBarValue,
-          patternStep: 0,
-          nextSectionName,
-        })
-        // «Счёт голосом» вместо клика — только когда нет активного паттерна
-        // (иначе счёт и паттерн будут спорить друг с другом за долю).
-        // Сэмплов голоса хватает на 1–8; при большем числе долей в такте
-        // просто не считаем сверх восьмой, клик тоже не проигрывается —
-        // так честнее, чем молчаливо повторять "8" не в такт.
-        if (voiceCount && currentBeatValue <= 8) {
-          playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
-        } else if (!voiceCount) {
-          clickSound(scheduledTime, true) // доля такта — всегда акцент
-        }
-      }
 
-      // Тики кольца метронома (деление доли) — звучат обычным (не акцентным)
-      // кликом, но только в режиме простого клика: если есть паттерн или
-      // включён счёт голосом, они спорили бы за долю с тем звуком — как и
-      // сама доля выше. t=0 совпадает по времени с 'beat'-событием выше
-      // (subBeat уже становится 0 при его обработке), поэтому здесь t=1..N-1.
-      const tickDuration = 60 / bpm / beatDivision
-      for (let t = 1; t < beatDivision; t++) {
-        const tickTime = scheduledTime + t * tickDuration
-        visualQueue.push({ time: tickTime, type: 'tick', subBeat: t })
-        if (!usePatternSounds && !voiceCount) {
-          clickSound(tickTime, false)
+        // Тики кольца метронома (деление доли) — звучат обычным (не
+        // акцентным) кликом, но только в режиме простого клика: если есть
+        // паттерн, пауза или включён счёт голосом, они спорили бы за долю с
+        // тем звуком — как и сама доля выше. t=0 совпадает по времени с
+        // 'beat'-событием выше (subBeat уже становится 0 при его обработке),
+        // поэтому здесь t=1..N-1.
+        const tickDuration = 60 / bpm / beatDivision
+        for (let t = 1; t < beatDivision; t++) {
+          const tickTime = scheduledTime + t * tickDuration
+          visualQueue.push({ time: tickTime, type: 'tick', subBeat: t })
+          if (!usePatternSounds && !silent && !voiceCount) {
+            clickSound(tickTime, false)
+          }
         }
       }
 
       nextNoteTime += 60 / bpm
 
-      if (beat === beatsPerBar) {
+      // >=, а не ===: долей в такте могли убавить во время игры, когда счёт
+      // уже ушёл дальше нового конца такта, — с === доля росла бы без конца,
+      // а такт и секции стояли на месте.
+      if (beat >= beatsPerBar) {
         beat = 1
         bar += 1
         if (songTotalBars > 0 && bar >= songTotalBars) {
@@ -330,15 +355,12 @@ export function createAudioEngine(): AudioEngine {
         beat += 1
       }
     }
-    timer = setTimeout(schedule, 25)
+    timer = setTimeout(() => schedule(run), 25)
   }
 
-  function startVisualLoop() {
+  function startVisualLoop(run: number) {
     const processVisuals = () => {
-      if (!audioContext) {
-        visualRaf = requestAnimationFrame(processVisuals)
-        return
-      }
+      if (run !== runId || !audioContext) return
       const now = audioContext.currentTime
       // 'tick'-события (без bar/beat) добавляются в schedule() отдельным
       // циклом от 'beat'/'stop' и могут оказаться в очереди не строго по
@@ -348,79 +370,68 @@ export function createAudioEngine(): AudioEngine {
       while (visualQueue.length && visualQueue[0].time <= now) {
         const event = visualQueue.shift()!
         if (event.type === 'stop') {
-          // Сначала isPlaying = false, потом сброс — как в stop(): экраны
-          // на сброс смотрят на engine.isPlaying, и в обратном порядке
-          // принимали его за «играет, такт 0, доля 1» (сетка песни
-          // оставалась с подсвеченной первой долей, кольцо — со вспышкой).
-          setIsPlaying(false)
-          resetPlaybackState()
-          if (timer) {
-            clearTimeout(timer)
-            timer = null
-          }
-          visualQueue = []
-          if (visualRaf) {
-            cancelAnimationFrame(visualRaf)
-            visualRaf = null
-          }
+          // Песня кончилась — как stop(): сначала isPlaying = false, потом
+          // сброс. Экраны на сброс смотрят на engine.isPlaying, и в обратном
+          // порядке принимали его за «играет, такт 0, доля 1».
+          stop()
           return
         }
         if (event.type === 'tick') {
           setPlaybackState({ subBeat: event.subBeat! })
           continue
         }
-        setPlaybackState({
-          beat: event.beat!,
-          bar: event.bar!,
-          subBeat: 0,
-          patternStep: typeof event.patternStep === 'number' ? event.patternStep : 0,
-          nextSectionName: event.nextSectionName ?? null,
-        })
+        setPlaybackState({ beat: event.beat!, bar: event.bar!, subBeat: 0, patternStep: event.patternStep ?? -1 })
       }
       visualRaf = requestAnimationFrame(processVisuals)
     }
     visualRaf = requestAnimationFrame(processVisuals)
   }
 
-  function stopVisualLoop() {
-    if (visualRaf) {
-      cancelAnimationFrame(visualRaf)
-      visualRaf = null
-    }
-    visualQueue = []
-  }
-
   async function start() {
+    if (isPlaying || starting) return
+    starting = true
+    const run = ++runId
     const ctx = ensureAudioContext()
-    if (ctx.state === 'suspended') await ctx.resume()
+    try {
+      if (ctx.state === 'suspended') await ctx.resume()
+    } catch (err) {
+      console.warn('Не удалось запустить звук:', err)
+      return
+    } finally {
+      starting = false
+    }
+    if (run !== runId) return // пока ждали resume(), нажали Стоп
 
-    setIsPlaying(true)
     beat = 1
     bar = 0
-    resetPlaybackState()
     visualQueue = []
+    resetPlaybackState()
+    setIsPlaying(true)
     nextNoteTime = ctx.currentTime + 0.1
-    schedule()
-    startVisualLoop()
+    // Не загрузившиеся при старте сэмплы (не было сети) — ещё попытка.
+    void sampleLoader.preloadAllSamples()
+    schedule(run)
+    startVisualLoop(run)
   }
 
   function stop() {
+    runId++
     setIsPlaying(false)
     if (timer) {
       clearTimeout(timer)
       timer = null
     }
-    stopVisualLoop()
+    if (visualRaf !== null) {
+      cancelAnimationFrame(visualRaf)
+      visualRaf = null
+    }
+    visualQueue = []
     resetPlaybackState()
   }
 
   return {
     setSong(song) {
       currentSong = song
-      if (song) {
-        ensureAudioContext()
-        void sampleLoader.preloadAllSamples()
-      }
     },
     setBpm(next) {
       bpm = next
@@ -433,11 +444,9 @@ export function createAudioEngine(): AudioEngine {
     },
     setBeatsPerBar(n) {
       beatsPerBar = n
-      beatsPerBarListener?.(n)
     },
     setBeatDivision(n) {
       beatDivision = n
-      beatDivisionListener?.(n)
     },
     start,
     stop,
@@ -452,6 +461,9 @@ export function createAudioEngine(): AudioEngine {
     get isPlaying() {
       return isPlaying
     },
+    get bpm() {
+      return bpm
+    },
     get beatsPerBar() {
       return beatsPerBar
     },
@@ -461,17 +473,20 @@ export function createAudioEngine(): AudioEngine {
     get samplesLoaded() {
       return sampleLoader.samplesLoaded
     },
+    get canStart() {
+      return sampleLoader.samplesLoaded || !(voiceCues || voiceCount || songHasNotes(currentSong))
+    },
+    get playbackState() {
+      return lastPlaybackState
+    },
     onPlaybackState(cb) {
       playbackListener = cb
+      return () => {
+        if (playbackListener === cb) playbackListener = null
+      }
     },
     onPlayingChange(cb) {
       playingListener = cb
-    },
-    onBeatsPerBarChange(cb) {
-      beatsPerBarListener = cb
-    },
-    onBeatDivisionChange(cb) {
-      beatDivisionListener = cb
     },
     onSamplesLoadedChange(cb) {
       sampleLoader.onSamplesLoadedChange(cb)

@@ -7,7 +7,7 @@ import { signInWithGoogle, describeAuthError } from '../data/auth.ts'
 import { isFirebaseConfigured } from '../data/firebase.ts'
 
 function signInCard(text: string): HTMLElement {
-  const error = h('div', { style: { color: 'var(--color-text-danger)', fontSize: 'var(--font-size-small)' }, hidden: true })
+  const error = h('div', { className: 'text-small text-danger', hidden: true })
   const signInButton: HTMLButtonElement = button('Войти через Google', {
     variant: 'accent',
     iconName: 'google-logo',
@@ -26,9 +26,9 @@ function signInCard(text: string): HTMLElement {
   })
   return h(
     'div',
-    { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' } },
+    { className: 'card stack' },
     h('h3', {}, 'Вход'),
-    h('p', { style: { color: 'var(--color-text-sub)', fontSize: 'var(--font-size-small)' } }, text),
+    h('p', { className: 'text-sub text-small' }, text),
     signInButton,
     error
   )
@@ -42,7 +42,7 @@ export function accountGate(text: string): HTMLElement | null {
     return h('div', { className: 'card' }, h('p', {}, 'Firebase ещё не настроен: заполните src/data/firebaseConfig.ts данными вашего проекта.'))
   }
   const state = getState()
-  if (!state.authReady) return h('p', { style: { textAlign: 'center', color: 'var(--color-text-muted)' } }, 'Загрузка…')
+  if (!state.authReady) return h('p', { className: 'text-center text-muted' }, 'Загрузка…')
   if (!state.user) return signInCard(text)
   return null
 }

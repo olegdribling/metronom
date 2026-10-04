@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type-check + smoke-тест аудио-движка
+      - name: Type-check + тесты
         run: |
           npx tsc --noEmit
           npm test
@@ -30,7 +30,9 @@ jobs:
         run: npx vite build
 
       - name: Deploy to Hostinger
-        uses: appleboy/scp-action@v0.1.7
+        # Закреплено по коммиту, а не по тегу: тег можно перевесить, а этому
+        # шагу отдаётся SSH-ключ от хостинга. Коммит — тег v0.1.7.
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
         with:
           host: 153.92.9.238
           port: 65002

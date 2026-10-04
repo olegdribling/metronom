@@ -3,76 +3,106 @@
 // свой контейнер (кроме "горячего" пути — подсветки битов, см.
 // screens/metronomeScreen.ts, там обновление идёт напрямую в DOM,
 // в обход перерисовки всего экрана, как и в v1).
-import { PlaybackState, Playlist, Song, ThemeKey, Beat } from '../types.ts'
-import { CONFIG } from '../config.ts'
+import { Beat, Meter, PlaylistInfo, Song, ThemeKey } from '../types.ts'
+import { CONFIG, DEFAULT_METER } from '../config.ts'
 import type { UserLibrary } from '../data/userLibrary.ts'
+import { openUserLibrary } from '../data/userLibrary.ts'
+import { clampBpm, clampMeter, pruneFills, songMeter } from '../data/songs.ts'
 import { signOutUser, type AppUser } from '../data/auth.ts'
 
 export interface AppState {
   themeId: ThemeKey
   voiceCues: boolean
   voiceCount: boolean
+  /** Текущий темп. Открыли песню — её темп; правка на метрономе пишется и в
+   * песню (setBpm). */
   bpm: number
-  beatsPerBar: number
-  isPlaying: boolean
+  /** Размер такта метронома без песни — свой, запоминается между запусками.
+   * С песней действует её размер (currentMeter). */
+  metronomeMeter: Meter
   samplesLoaded: boolean
-  playbackState: PlaybackState
   /** Вошедший через Google пользователь (data/auth.ts); null — не вошёл. */
   user: AppUser | null
   /** Firebase уже сказал, вошёл пользователь или нет (до этого экраны песен и
    * битов показывают «Загрузка…», а не карточку входа). */
   authReady: boolean
   /** Плейлисты аккаунта — для списка «Мои плейлисты». */
-  playlists: { id: string; name: string }[]
+  playlists: PlaylistInfo[]
   /** Открытый плейлист; songs — его песни. */
   playlistId: string | null
   songs: Song[]
+  /** Песни открытого плейлиста уже пришли (из кэша или с сервера) — до этого
+   * экран песни показывает «Загрузка…», а не «не найдена». */
+  songsLoaded: boolean
+  /** Загруженная песня: её играет движок и к ней относятся темп и размер на
+   * метрономе (app.ts). null — метроном сам по себе. */
   currentSongId: number | null
+  /** Синхронизация с аккаунтом остановилась — текст для плашки в футере. */
   connectionError: string | null
   beats: Beat[]
+  /** Биты аккаунта уже пришли — до этого редактор бита показывает
+   * «Загрузка…», а не «Бит не найден». */
+  beatsLoaded: boolean
 }
 
 type Listener = (state: AppState) => void
 
-function loadThemeId(): ThemeKey {
-  return (localStorage.getItem('metronom_theme') as ThemeKey) || 'minimal'
+// localStorage бывает недоступен (приватный режим, запрет сайта) — тогда
+// просто не помним настройку, а не падаем.
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
 }
-function loadVoiceCues(): boolean {
-  return localStorage.getItem('metronom_voice_cues') === 'true'
+function writeStored(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // не запомнили — не страшно
+  }
 }
-function loadVoiceCount(): boolean {
-  return localStorage.getItem('metronom_voice_count') === 'true'
+
+function loadMetronomeMeter(): Meter {
+  try {
+    return clampMeter(JSON.parse(readStored('metronom_meter') ?? 'null') ?? DEFAULT_METER)
+  } catch {
+    return { ...DEFAULT_METER }
+  }
 }
 
 const state: AppState = {
-  themeId: loadThemeId(),
-  voiceCues: loadVoiceCues(),
-  voiceCount: loadVoiceCount(),
+  themeId: (readStored('metronom_theme') as ThemeKey) || 'minimal',
+  voiceCues: readStored('metronom_voice_cues') === 'true',
+  voiceCount: readStored('metronom_voice_count') === 'true',
   bpm: CONFIG.DEFAULT_BPM,
-  beatsPerBar: 4,
-  isPlaying: false,
+  metronomeMeter: loadMetronomeMeter(),
   samplesLoaded: false,
-  playbackState: { beat: 1, bar: 0, subBeat: 0, patternStep: 0, nextSectionName: null },
   user: null,
   authReady: false,
   playlists: [],
   playlistId: null,
   songs: [],
+  songsLoaded: false,
   currentSongId: null,
   connectionError: null,
   beats: [],
+  beatsLoaded: false,
 }
 
 // Библиотека аккаунта (data/userLibrary.ts) — открыта, пока пользователь
 // вошёл; app.ts открывает/закрывает её по смене входа.
 let library: UserLibrary | null = null
-let playlistsData: Playlist[] = []
 let lastPlaylistId: string | null = null
 let playlistsLoaded = false
 let lastPlaylistLoaded = false
 // Последний плейлист открываем сам один раз — при входе. Если пользователь
 // потом вернулся к списку «Мои плейлисты», снимки его туда не выдёргивают.
 let autoOpenDone = false
+// Песня, чей темп уже применён: темп песни ставится один раз при её открытии
+// (или когда она пришла из БД после открытия), дальше его меняют отдельно.
+let tempoAppliedFor: number | null = null
 const listeners = new Set<Listener>()
 
 function notify() {
@@ -93,37 +123,70 @@ export function patchState(patch: Partial<AppState>): void {
   notify()
 }
 
+export function currentSong(s: AppState = state): Song | undefined {
+  return s.currentSongId === null ? undefined : s.songs.find((song) => song.id === s.currentSongId)
+}
+
+export function currentMeter(s: AppState = state): Meter {
+  const song = currentSong(s)
+  return song ? songMeter(song) : s.metronomeMeter
+}
+
+function applySongTempo() {
+  const song = currentSong()
+  if (song && tempoAppliedFor !== song.id) {
+    tempoAppliedFor = song.id
+    state.bpm = song.bpm
+  }
+}
+
 function applyCurrentPlaylist() {
   if (!autoOpenDone && playlistsLoaded && lastPlaylistLoaded) {
     autoOpenDone = true
-    if (!state.playlistId && lastPlaylistId && playlistsData.some((p) => p.id === lastPlaylistId)) {
-      state.playlistId = lastPlaylistId
+    if (!state.playlistId && lastPlaylistId && state.playlists.some((p) => p.id === lastPlaylistId)) {
+      setOpenPlaylist(lastPlaylistId)
     }
   }
-  const current = playlistsData.find((p) => p.id === state.playlistId)
-  if (state.playlistId && !current && playlistsLoaded) state.playlistId = null // удалён на другом устройстве
-  state.songs = current?.songs ?? []
+  // Удалён на другом устройстве.
+  if (state.playlistId && playlistsLoaded && !state.playlists.some((p) => p.id === state.playlistId)) setOpenPlaylist(null)
 }
 
-function resetLibraryState() {
-  playlistsData = []
-  lastPlaylistId = null
-  playlistsLoaded = false
-  lastPlaylistLoaded = false
-  autoOpenDone = false
-  Object.assign(state, { playlists: [], playlistId: null, songs: [], currentSongId: null, beats: [], connectionError: null })
+function setOpenPlaylist(id: string | null) {
+  if (id !== state.playlistId) {
+    state.playlistId = id
+    state.songs = []
+    state.songsLoaded = false
+    state.currentSongId = null
+  }
+  library?.watchSongs(id)
 }
 
-export function setUserLibrary(user: AppUser, lib: UserLibrary): void {
-  library?.destroy()
+function describeSyncError(err: unknown): string {
+  const code = (err as { code?: string })?.code ?? ''
+  const reason =
+    code === 'permission-denied'
+      ? 'нет доступа к данным аккаунта'
+      : code === 'resource-exhausted'
+        ? 'превышен лимит Firestore'
+        : code === 'unauthenticated'
+          ? 'вход в аккаунт устарел'
+          : 'ошибка сервера'
+  return `Синхронизация с аккаунтом остановилась: ${reason}.`
+}
+
+function attachLibrary(lib: UserLibrary) {
   library = lib
-  resetLibraryState()
-  state.user = user
   lib.onPlaylistsChange((list) => {
-    playlistsData = list
     playlistsLoaded = true
-    state.playlists = list.map((p) => ({ id: p.id, name: p.name }))
+    state.playlists = list
     applyCurrentPlaylist()
+    notify()
+  })
+  lib.onSongsChange((playlistId, songs) => {
+    if (playlistId !== state.playlistId) return
+    state.songs = songs
+    state.songsLoaded = true
+    applySongTempo()
     notify()
   })
   lib.onLastPlaylistChange((id) => {
@@ -132,11 +195,36 @@ export function setUserLibrary(user: AppUser, lib: UserLibrary): void {
     applyCurrentPlaylist()
     notify()
   })
-  lib.onBeatsChange((beats) => patchState({ beats }))
+  lib.onBeatsChange((beats) => patchState({ beats, beatsLoaded: true }))
   lib.onError((err) => {
     console.error('Ошибка синхронизации с Firestore:', err)
-    patchState({ connectionError: 'Не удалось связаться с сервером. Правки сохранены на этом устройстве и уйдут, когда появится связь.' })
+    patchState({ connectionError: describeSyncError(err) })
   })
+  lib.watchSongs(state.playlistId)
+}
+
+function resetLibraryState() {
+  lastPlaylistId = null
+  playlistsLoaded = false
+  lastPlaylistLoaded = false
+  autoOpenDone = false
+  Object.assign(state, {
+    playlists: [],
+    playlistId: null,
+    songs: [],
+    songsLoaded: false,
+    currentSongId: null,
+    beats: [],
+    beatsLoaded: false,
+    connectionError: null,
+  })
+}
+
+export function setUserLibrary(user: AppUser): void {
+  library?.destroy()
+  resetLibraryState()
+  state.user = user
+  attachLibrary(openUserLibrary(user.uid))
   notify()
 }
 
@@ -148,6 +236,17 @@ export function clearUserLibrary(): void {
   notify()
 }
 
+/** «Повторить» на плашке ошибки: подписки Firestore после ошибки не
+ * оживают сами — открываем библиотеку заново, не сбрасывая открытый
+ * плейлист и песню. */
+export function retrySync(): void {
+  if (!state.user) return
+  library?.destroy()
+  state.connectionError = null
+  attachLibrary(openUserLibrary(state.user.uid))
+  notify()
+}
+
 // Выход: сначала отправить отложенные правки — после signOut прав на запись
 // уже нет. Саму библиотеку закроет app.ts, когда придёт смена входа.
 export async function signOut(): Promise<void> {
@@ -156,32 +255,62 @@ export async function signOut(): Promise<void> {
 }
 
 export function openPlaylist(id: string): void {
-  state.playlistId = id
-  state.currentSongId = null
+  setOpenPlaylist(id)
   library?.setLastPlaylist(id)
-  applyCurrentPlaylist()
   notify()
 }
 
 export function closePlaylist(): void {
-  state.playlistId = null
-  state.songs = []
-  state.currentSongId = null
+  setOpenPlaylist(null)
   notify()
 }
 
 export function createPlaylist(name: string): void {
   if (!library) return
-  openPlaylist(library.createPlaylist(name.trim() || 'Без названия'))
+  openPlaylist(library.createPlaylist(name.trim().slice(0, CONFIG.MAX_NAME_LENGTH) || 'Без названия'))
+}
+
+/** Загрузить песню: её играет движок, к ней относятся темп и размер на
+ * метрономе. Темп песни применяется заново (открыли песню — её темп). */
+export function loadSong(songId: number | null): void {
+  state.currentSongId = songId
+  tempoAppliedFor = null
+  applySongTempo()
+  notify()
 }
 
 export function saveSongs(songs: Song[]): void {
   state.songs = songs
-  const id = state.playlistId
-  if (library && id) {
-    playlistsData = playlistsData.map((p) => (p.id === id ? { ...p, songs } : p))
-    library.savePlaylistSongs(id, songs)
+  if (library && state.playlistId) library.saveSongs(state.playlistId, songs)
+  notify()
+}
+
+/** Темп. С загруженной песней пишется и в неё (это её темп), кроме
+ * `temporary` — редактор бита меняет темп только на время работы с битом. */
+export function setBpm(bpm: number, opts: { temporary?: boolean } = {}): void {
+  const next = clampBpm(bpm)
+  state.bpm = next
+  const song = currentSong()
+  if (song && !opts.temporary && song.bpm !== next) {
+    saveSongs(state.songs.map((s) => (s.id === song.id ? { ...s, bpm: next } : s)))
+    return
   }
+  notify()
+}
+
+/** Размер такта: загруженной песни (в ней и хранится) или метронома. У песни
+ * при этом убираются филлы, начинавшиеся за новым концом своей секции. */
+export function setMeter(meter: Meter): void {
+  const next = clampMeter(meter)
+  const song = currentSong()
+  if (song) {
+    saveSongs(
+      state.songs.map((s) => (s.id === song.id ? { ...s, ...next, sections: pruneFills(s.sections, next.beatsPerBar) } : s))
+    )
+    return
+  }
+  state.metronomeMeter = next
+  writeStored('metronom_meter', JSON.stringify(next))
   notify()
 }
 
@@ -193,19 +322,19 @@ export function saveBeats(beats: Beat[]): void {
 
 export function setThemeId(themeId: ThemeKey): void {
   state.themeId = themeId
-  localStorage.setItem('metronom_theme', themeId)
+  writeStored('metronom_theme', themeId)
   document.documentElement.dataset.theme = themeId
   notify()
 }
 
 export function setVoiceCues(value: boolean): void {
   state.voiceCues = value
-  localStorage.setItem('metronom_voice_cues', String(value))
+  writeStored('metronom_voice_cues', String(value))
   notify()
 }
 
 export function setVoiceCount(value: boolean): void {
   state.voiceCount = value
-  localStorage.setItem('metronom_voice_count', String(value))
+  writeStored('metronom_voice_count', String(value))
   notify()
 }

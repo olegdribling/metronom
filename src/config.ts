@@ -3,16 +3,24 @@
 import { DrumRole } from './types.ts'
 
 export const CONFIG = {
-  MAX_SONGS: 50,
-  MAX_SECTIONS: 20,
-  MAX_SONG_NAME_LENGTH: 100,
+  /** Название песни, плейлиста, бита. */
+  MAX_NAME_LENGTH: 100,
   MAX_COMMENT_LENGTH: 200,
   MIN_BPM: 40,
   MAX_BPM: 240,
   DEFAULT_BPM: 120,
-  BEATS_PER_BAR: 4,
+  /** Тактов в секции песни (решение пользователя). */
+  MAX_SECTION_BARS: 32,
+  // Размер такта (кольцо метронома, песня, бит): долей в такте и деление
+  // доли — на сколько ударов делится доля.
+  MIN_BEATS_PER_BAR: 1,
+  MAX_BEATS_PER_BAR: 16,
+  MIN_BEAT_DIVISION: 1,
+  MAX_BEAT_DIVISION: 8,
   SAVE_DEBOUNCE_MS: 400,
 } as const
+
+export const DEFAULT_METER = { beatsPerBar: 4, beatDivision: 4 } as const
 
 export const SAMPLES_BASE = 'sound/Real Drum Kit'
 
@@ -146,5 +154,3 @@ export const instrumentFrequencyMap: Record<string, number> = PATTERN_INSTRUMENT
   acc[inst.id] = inst.freq
   return acc
 }, {} as Record<string, number>)
-
-export const TOUCH_DRAG_DELAY_MS = 180

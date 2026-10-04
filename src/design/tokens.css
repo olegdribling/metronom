@@ -32,11 +32,6 @@
   --color-danger-surface-hover: #fef2f2;
   --color-focus-ring: #2563eb;
 
-  /* Цвета дорожек паттерна */
-  --color-instrument-bd: #374151;
-  --color-instrument-sd: #6b7280;
-  --color-instrument-hh: #9ca3af;
-
   /* Сетка редактора бита (.beat-grid, components/beatGrid.ts) */
   --color-grid-column-hover: rgba(31, 41, 55, 0.08);
   --color-grid-playhead: rgba(31, 41, 55, 0.14);
@@ -51,7 +46,7 @@
 
 :root {
   /* Типографика */
-  --font-family: 'Manrope', 'Helvetica Neue', sans-serif;
+  --font-family: 'Helvetica Neue', sans-serif;
   --font-size-h1: 1.75rem;
   --font-size-h2: 1.25rem;
   --font-size-h3: 1.0625rem;
