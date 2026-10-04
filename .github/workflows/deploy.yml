@@ -29,9 +29,52 @@ jobs:
       - name: Build
         run: npx vite build
 
+      # Загрузка на Hostinger — до 3 попыток: SSH хостинга временами обрывает
+      # подключение (сборка и тесты при этом зелёные), а однажды загрузка
+      # висела полчаса — поэтому у каждой попытки предел 10 минут. Упали все
+      # три — деплой красный, как раньше.
+      # scp-action закреплён по коммиту, а не по тегу: тег можно перевесить,
+      # а этому шагу отдаётся SSH-ключ от хостинга. Коммит — тег v0.1.7.
       - name: Deploy to Hostinger
-        # Закреплено по коммиту, а не по тегу: тег можно перевесить, а этому
-        # шагу отдаётся SSH-ключ от хостинга. Коммит — тег v0.1.7.
+        id: deploy1
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
+        with:
+          host: 153.92.9.238
+          port: 65002
+          username: u673267555
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: 'dist/.'
+          target: /home/u673267555/domains/slateblue-crow-206906.hostingersite.com/public_html
+          strip_components: 1
+
+      - name: Пауза перед повтором
+        if: steps.deploy1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy to Hostinger (попытка 2)
+        id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
+        with:
+          host: 153.92.9.238
+          port: 65002
+          username: u673267555
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: 'dist/.'
+          target: /home/u673267555/domains/slateblue-crow-206906.hostingersite.com/public_html
+          strip_components: 1
+
+      - name: Пауза перед последней попыткой
+        if: steps.deploy2.outcome == 'failure'
+        run: sleep 60
+
+      - name: Deploy to Hostinger (попытка 3)
+        if: steps.deploy2.outcome == 'failure'
+        timeout-minutes: 10
         uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
         with:
           host: 153.92.9.238
