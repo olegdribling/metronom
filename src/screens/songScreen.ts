@@ -1,5 +1,8 @@
-// Экран песни: секции (порядок, такты, комментарий), вход в редактор
-// паттерна. Одна песня внутри плейлиста — Song из state.songs.
+// Экран песни: строка темпа и размера такта песни (свои у каждой песни, на
+// метроном и биты не влияют — решение пользователя; BPM — доли), секции
+// (порядок, такты, комментарий), вход в редактор паттерна. Одна песня
+// внутри плейлиста — Song из state.songs. Play в футере на этой странице
+// играет эту песню (app.ts).
 //
 // В каждой секции — сетка долей (.bar-grid), как в v1 (SectionCard.tsx):
 // квадратик на долю, по долям такта песни (её размер, data/songs.ts) на
@@ -20,12 +23,23 @@
 import { h, keepDigits, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
+import { createMeterField, createTempoField } from '../components/tempoControls.ts'
 import { icon } from '../icons.ts'
 import { CONFIG, SECTION_TYPES } from '../config.ts'
 import { Beat, PlaybackState, Section, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, saveSongs, saveBeats } from '../state/appState.ts'
-import { beatLengthInBeats, clampBars, newSectionId, pruneFills, sectionBeatCount, sliceForBeat } from '../data/songs.ts'
+import {
+  beatLengthInBeats,
+  clampBars,
+  clampBpm,
+  newSectionId,
+  pruneFills,
+  sectionBeatCount,
+  sliceForBeat,
+  songMeter,
+  withSongMeter,
+} from '../data/songs.ts'
 
 const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '' })
 
@@ -75,6 +89,39 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     saveSongs(getState().songs.map((s) => (s.id === songId ? { ...s, ...patch } : s)))
   }
 
+  // --- темп и размер песни ---
+  const setSongBpm = (bpm: number) => updateSong({ bpm: clampBpm(bpm) })
+  const tempo = createTempoField({
+    key: 'song-bpm',
+    get: () => currentSong()?.bpm ?? CONFIG.DEFAULT_BPM,
+    set: setSongBpm,
+    rerender: () => render(),
+    buttonClass: 'tempo-button',
+    inputClass: 'input tempo-input',
+  })
+  const meterField = createMeterField({
+    get: () => songMeter(currentSong()!),
+    // Размер меняет число долей в секциях — филлы за новым концом уходят.
+    set: (meter) => {
+      const song = currentSong()
+      if (song) saveSongs(getState().songs.map((s) => (s.id === songId ? withSongMeter(song, meter) : s)))
+    },
+    rerender: () => render(),
+    align: 'end',
+  })
+
+  function tempoRow(song: Song): HTMLElement {
+    return h(
+      'div',
+      { className: 'card row' },
+      iconButton('minus', { onClick: () => setSongBpm(song.bpm - 1), ariaLabel: 'Темп: меньше' }),
+      tempo.render(),
+      h('span', { className: 'text-small text-sub' }, 'BPM'),
+      iconButton('plus', { onClick: () => setSongBpm(song.bpm + 1), ariaLabel: 'Темп: больше' }),
+      h('div', { className: 'push-right' }, meterField.render())
+    )
+  }
+
   function updateSection(sectionId: string, patch: Partial<Section>) {
     const song = currentSong()
     if (!song) return
@@ -110,7 +157,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     let fillAt = at
     if (covering) {
       const source = beatById(covering.beatId)!
-      beat = { ...source, id, name: `${source.name} (копия)`, tracks: source.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
+      // Темп копии — темп песни: в редакторе она звучит так же, как здесь.
+      beat = { ...source, id, name: `${source.name} (копия)`, bpm: song.bpm, tracks: source.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
       fillAt = covering.at
     } else {
       beat = sliceForBeat(song, index, at, id, getState().beats)
@@ -425,6 +473,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       h(
         'div',
         { className: 'stack' },
+        tempoRow(song),
         ...sectionCards,
         showAddForm
           ? sectionForm('new', newSection, addSection, () => {

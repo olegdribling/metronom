@@ -5,19 +5,9 @@ import { createRouter } from './router.ts'
 import { createAudioEngine } from './engine/audioEngine.ts'
 import { appHeader, HeaderRightAction } from './components/appHeader.ts'
 import { appFooter, RouteKind } from './components/appFooter.ts'
-import {
-  currentMeter,
-  currentSong,
-  getState,
-  loadSong,
-  patchState,
-  retrySync,
-  setUserLibrary,
-  clearUserLibrary,
-  subscribe,
-} from './state/appState.ts'
+import { getState, patchState, retrySync, setUserLibrary, clearUserLibrary, subscribe } from './state/appState.ts'
 import { onUserChange } from './data/auth.ts'
-import { resolveSongForEngine } from './data/resolveBeat.ts'
+import { engineSettingsFor, sameSource, songForEngine, type EngineSettings } from './data/engineSettings.ts'
 import { mountMetronomeScreen } from './screens/metronomeScreen.ts'
 import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
@@ -25,7 +15,7 @@ import { mountPatternScreen } from './screens/patternScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
 import { mountBeatEditorScreen } from './screens/beatEditorScreen.ts'
-import { Beat, Song } from './types.ts'
+import { PlaybackSource } from './types.ts'
 
 const ROUTE_PATHS: Record<RouteKind, string> = {
   metronome: '/metronome',
@@ -39,47 +29,63 @@ export function startApp(root: HTMLElement): void {
   engine.onSamplesLoadedChange((loaded) => patchState({ samplesLoaded: loaded }))
   document.documentElement.dataset.theme = getState().themeId
 
-  // --- движок в курсе состояния ---
-  // Что играет движок: загруженная песня (state.currentSongId) или — пока
-  // открыт редактор бита — сам бит (редактор грузит его через setSong). Темп
-  // и размер такта приходят из состояния: у песни свои (data/songs.ts), без
-  // песни — метронома (appState.ts). Экраны меняют только состояние, движок
-  // догоняет его здесь — на каждое изменение, а не только при открытии
-  // песни: секции, паттерн и биты правят после загрузки, в том числе снимки
-  // Firestore после обновления страницы. Движку уходит копия песни с
-  // подставленными паттернами битов (resolveSongForEngine) — пересобирается,
-  // когда меняется песня или биты (правка бита в «Битах» сразу слышна в
-  // песне). Каждое сохранение — новый объект, поэтому «изменилась» = другая
-  // ссылка.
-  let beatEditorActive = false
-  let engineSong: Song | null | undefined
-  let engineBeats: Beat[] | null = null
+  // --- что играет движок ---
+  // У каждой страницы свой звук и свои настройки, друг на друга они не
+  // влияют (решение пользователя): метроном — свои темп/размер/голос
+  // (state.metronome), песня и её паттерн — песня со своими, редактор бита —
+  // бит со своим темпом (data/engineSettings.ts). У списков и настроек звука
+  // нет: Play там неактивен, а то, что уже играет, доигрывает.
+  // Перешли на страницу с другим звуком — игра останавливается.
+  //
+  // Движок догоняет состояние здесь, на каждое изменение: песню и биты
+  // правят после открытия (в том числе снимки Firestore после обновления
+  // страницы). Песне уходит копия с подставленными паттернами битов секций
+  // (songForEngine) — пересобирается, когда меняется песня или биты (правка
+  // бита сразу слышна в песне). Каждое сохранение — новый объект, поэтому
+  // «изменилась» = другая ссылка.
+  let pageSource: PlaybackSource | null = { kind: 'metronome' }
+  let activeSource: PlaybackSource = { kind: 'metronome' }
+  // Содержимое, уже отданное движку (undefined — ещё ничего).
+  let engineContent: EngineSettings['content'] | undefined
+  let sourceReady = true
+
+  const sameContent = (a: EngineSettings['content'] | undefined, b: EngineSettings['content']) =>
+    a === b ||
+    (!!a && !!b && 'song' in a && 'song' in b && a.song === b.song && a.beats === b.beats) ||
+    (!!a && !!b && 'beat' in a && 'beat' in b && a.beat === b.beat)
 
   function syncEngine() {
     const state = getState()
-    engine.setVoiceCues(state.voiceCues)
-    engine.setVoiceCount(state.voiceCount)
-    if (engine.bpm !== state.bpm) engine.setBpm(state.bpm)
-    if (beatEditorActive) return
-    const meter = currentMeter(state)
-    if (engine.beatsPerBar !== meter.beatsPerBar) engine.setBeatsPerBar(meter.beatsPerBar)
-    if (engine.beatDivision !== meter.beatDivision) engine.setBeatDivision(meter.beatDivision)
-    const song = currentSong(state) ?? null
-    if (song === engineSong && state.beats === engineBeats) return
-    engineSong = song
-    engineBeats = state.beats
-    engine.setSong(song ? resolveSongForEngine(song, state.beats) : null)
+    const settings = engineSettingsFor(activeSource, state)
+    sourceReady = !!settings
+    if (!settings) {
+      // Песни или бита нет: ещё не пришли из БД — или удалили, пока играли.
+      if (engine.isPlaying) engine.stop()
+      if (engineContent !== null) engine.setSong(null)
+      engineContent = null
+      return
+    }
+    engine.setVoiceCues(settings.voiceCues)
+    engine.setVoiceCount(settings.voiceCount)
+    if (engine.bpm !== settings.bpm) engine.setBpm(settings.bpm)
+    if (engine.beatsPerBar !== settings.beatsPerBar) engine.setBeatsPerBar(settings.beatsPerBar)
+    if (engine.beatDivision !== settings.beatDivision) engine.setBeatDivision(settings.beatDivision)
+    if (sameContent(engineContent, settings.content)) return
+    engineContent = settings.content
+    engine.setSong(songForEngine(settings.content))
   }
 
-  // Редактор бита открыт — движок играет бит; закрыт — снова то, что было до
-  // него: загруженная песня с её темпом и размером, а без песни — щелчок
-  // (решение пользователя; раньше после редактора бит играл и на метрономе).
-  function setBeatEditorActive(active: boolean) {
-    if (beatEditorActive === active) return
-    beatEditorActive = active
-    if (active) return
-    engineSong = undefined
-    loadSong(getState().currentSongId)
+  // Страница открылась: со своим звуком — он становится источником (другой
+  // звук, если играл, останавливается); без звука (списки, настройки) —
+  // играющее доигрывает.
+  function enterPage(source: PlaybackSource | null) {
+    pageSource = source
+    if (source && !sameSource(source, activeSource)) {
+      if (engine.isPlaying) engine.stop()
+      activeSource = source
+      engineContent = undefined
+    }
+    syncEngine()
   }
 
   // --- оболочка: ровно три div-а — прямые дети контейнера (root) ---
@@ -107,7 +113,10 @@ export function startApp(root: HTMLElement): void {
   function renderChrome(force = false) {
     const state = getState()
     const title = titleFn()
-    const key = [routeKind, title, engine.isPlaying, engine.canStart, state.connectionError].join('|')
+    // Play — только на странице со своим звуком, когда ему есть что играть;
+    // Стоп — всегда.
+    const canPlay = !!pageSource && sourceReady && engine.canStart
+    const key = [routeKind, title, engine.isPlaying, canPlay, state.connectionError].join('|')
     if (!force && key === chromeKey) return
     chromeKey = key
 
@@ -117,7 +126,7 @@ export function startApp(root: HTMLElement): void {
 
     const newFooter = appFooter({
       isPlaying: engine.isPlaying,
-      canStart: engine.canStart,
+      canStart: canPlay,
       activeRoute: routeKind,
       onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
       onNavigate: (route) => router.navigate(ROUTE_PATHS[route]),
@@ -157,19 +166,14 @@ export function startApp(root: HTMLElement): void {
     screenCleanup = fn(mainSlot)
   }
 
-  // Каждый маршрут, кроме редактора бита, — движок снова играет песню/щелчок.
-  function enterRoute() {
-    setBeatEditorActive(false)
-  }
-
   router.on('/metronome', () => {
-    enterRoute()
+    enterPage({ kind: 'metronome' })
     setScreen('metronome', () => 'Metronom')
     mountScreen((c) => mountMetronomeScreen(c, engine))
   })
 
   router.on('/playlist', () => {
-    enterRoute()
+    enterPage(null)
     setScreen('playlist', () => 'Плейлист')
     mountScreen((c) => mountPlaylistScreen(c, (songId) => router.navigate(`/song/${songId}`)))
   })
@@ -183,8 +187,7 @@ export function startApp(root: HTMLElement): void {
     const songId = Number(params.id)
     const focusSectionId = songFocus?.songId === songId ? songFocus.sectionId : null
     songFocus = null
-    enterRoute()
-    loadSong(songId)
+    enterPage({ kind: 'song', songId })
     setScreen('playlist', () => getState().songs.find((s) => s.id === songId)?.name ?? 'Песня', {
       showBack: true,
       onBack: () => router.navigate('/playlist'),
@@ -204,16 +207,14 @@ export function startApp(root: HTMLElement): void {
 
   router.on('/song/:id/pattern', (params) => {
     const songId = Number(params.id)
-    enterRoute()
-    // Обновили страницу прямо в редакторе паттерна — песню всё равно
-    // загрузить, иначе Play не играл бы её.
-    if (getState().currentSongId !== songId) loadSong(songId)
+    // Паттерн — часть песни: играет та же песня, переход игру не прерывает.
+    enterPage({ kind: 'song', songId })
     setScreen('playlist', () => 'Паттерн', { showBack: true, onBack: () => router.navigate(`/song/${songId}`) })
     mountScreen((c) => mountPatternScreen(c, songId, engine))
   })
 
   router.on('/beats', () => {
-    enterRoute()
+    enterPage(null)
     setScreen('beats', () => 'Биты')
     mountScreen((c) => mountBeatsScreen(c, (beatId) => router.navigate(`/beats/${encodeURIComponent(beatId)}`)))
   })
@@ -225,7 +226,7 @@ export function startApp(root: HTMLElement): void {
     // onRegisterSave при монтировании (mountScreen ниже выполняется сразу
     // после setScreen, до первого возможного клика по иконке).
     let requestSave: () => void = () => {}
-    setBeatEditorActive(true)
+    enterPage({ kind: 'beat', beatId })
     const back = beatEditorReturn
     beatEditorReturn = null
     const leave = () => {
@@ -248,7 +249,7 @@ export function startApp(root: HTMLElement): void {
   })
 
   router.on('/settings', () => {
-    enterRoute()
+    enterPage(null)
     setScreen('settings', () => 'Настройки')
     mountScreen(mountSettingsScreen)
   })

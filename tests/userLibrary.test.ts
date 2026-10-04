@@ -158,7 +158,7 @@ test('закрытие библиотеки отправляет отложен�
   lib.watchSongs('p1')
   await settle()
   lib.saveSongs('p1', [{ ...lastSongs()[0], name: 'Переименована' }])
-  lib.saveBeats([{ id: 'beat_1', kind: 'beat', name: 'Бит', steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: 'real', tracks: [] }])
+  lib.saveBeats([{ id: 'beat_1', kind: 'beat', name: 'Бит', steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: 'real', bpm: 90, tracks: [] }])
   lib.destroy()
   assert.equal(fake.store.get(songPath('p1', 1))!.name, 'Переименована')
   assert.equal(fake.store.get(`users/${UID}/beats/beat_1`)!.name, 'Бит')

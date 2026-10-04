@@ -62,6 +62,11 @@ export interface Beat {
   /** id кита из DRUM_KITS (config.ts) — свой на каждый бит, не общий на
    * приложение, как и steps/beatsPerBar/beatDivision. */
   kitId: string
+  /** Темп, с которым бит играет в своём редакторе, — свой у каждого бита
+   * (страницы не влияют друг на друга, решение пользователя). BPM — доли,
+   * как в песне. В песне бит играет в темпе песни. Старым битам —
+   * CONFIG.DEFAULT_BPM (normalizeBeat). */
+  bpm: number
   tracks: BeatTrack[]
 }
 
@@ -131,6 +136,22 @@ export interface Meter {
   beatsPerBar: number
   beatDivision: number
 }
+
+/** Настройки страницы «Метроном» — свои, ни на что не влияют и не зависят от
+ * песен и битов; запоминаются между запусками (state/appState.ts). */
+export interface MetronomeSettings extends Meter {
+  /** Темп — скорость КАЖДОЙ точки кольца, крупной и мелкой (решение
+   * пользователя): 120 — удар раз в 0,5 с, круг 4/4 из 16 точек — 8 с. В
+   * песнях и битах BPM — доля (крупная точка). */
+  bpm: number
+  /** «Считать вслух вместо клика»: крупная точка — номер доли, мелкие —
+   * номер внутри доли (one, two, three, four, two, two, three, four, …). */
+  voiceCount: boolean
+}
+
+/** Что играет страница: у метронома, песни (и её паттерна), бита — свой
+ * звук (app.ts). У списков и настроек звука нет. */
+export type PlaybackSource = { kind: 'metronome' } | { kind: 'song'; songId: number } | { kind: 'beat'; beatId: string }
 
 export interface SectionFormData {
   name: string

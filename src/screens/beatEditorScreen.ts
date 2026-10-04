@@ -14,20 +14,20 @@
 // Название не редактируется вживую — только через «Сохранить» (запрашивает
 // имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
 // Своей кнопки плей в редакторе нет — играть через общий транспорт в
-// футере (app.ts), поэтому редактор держит движок в курсе: на каждое
-// изменение бита резолвит его в обычный Pattern (resolveBeatPattern(),
-// data/resolveBeat.ts) и грузит через engine.setSong() — иначе общий Play
-// не знает про бит и просто щёлкает метрономом.
-import { h, isRemounting, keepDigits, mount } from '../dom.ts'
+// футере: на этой странице он играет бит (app.ts берёт его из состояния —
+// каждая правка сразу слышна) в темпе самого бита (beat.bpm, свой у
+// каждого бита).
+import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { createBeatGrid } from '../components/beatGrid.ts'
 import { accountGate } from '../components/signInCard.ts'
+import { createTempoField } from '../components/tempoControls.ts'
 import { icon } from '../icons.ts'
-import { CONFIG, DEFAULT_METER, DRUM_ROLES, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
+import { CONFIG, DRUM_ROLES, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
 import { Beat, DrumRole } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats, setBpm } from '../state/appState.ts'
-import { resolveBeatPattern } from '../data/resolveBeat.ts'
+import { getState, subscribe, saveBeats } from '../state/appState.ts'
+import { clampBpm } from '../data/songs.ts'
 import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
 
 export function mountBeatEditorScreen(
@@ -41,36 +41,13 @@ export function mountBeatEditorScreen(
   let showSaveDialog = false
   let nameDraft = ''
   let showKitPicker = false
-  // Черновик ручного ввода BPM: null — не вводят (как в metronomeScreen.ts).
-  let bpmDraft: string | null = null
-  // Версия бита, уже отданная движку.
-  let syncedBeat: Beat | null = null
 
   function currentBeat(): Beat | undefined {
     return getState().beats.find((b) => b.id === beatId)
   }
 
-  // Бит играет ровно свои beat.steps шагов и снова по кругу — поэтому БЕЗ
-  // секций: у песни без секций нет длины, движок не «доходит до конца» и не
-  // начинает заново, шаг просто идёт по модулю длины паттерна. С секцией
-  // (было: bars = beatBarCount(beat)) круг обрывался на границе такта
-  // движка (его доли × 2 шага, например 8), а не бита: 7 шагов играли как
-  // 0123456 0123456 01 | 0123456 … См. tests/audioEngine.test.ts.
-  function syncEngine(beat: Beat) {
-    if (beat === syncedBeat) return
-    syncedBeat = beat
-    engine.setSong({
-      id: -1,
-      name: beat.name,
-      bpm: getState().bpm,
-      ...DEFAULT_METER,
-      sections: [],
-      pattern: resolveBeatPattern(beat),
-    })
-  }
-
-  // saveBeats перерисует экран по подписке, а render() отдаст новую версию
-  // движку.
+  // saveBeats перерисует экран по подписке, а app.ts отдаст новую версию
+  // бита движку.
   function updateBeat(patch: Partial<Beat>) {
     saveBeats(getState().beats.map((b) => (b.id === beatId ? { ...b, ...patch } : b)))
   }
@@ -117,16 +94,15 @@ export function mountBeatEditorScreen(
     engine.previewSound(`${kit.id}_${role}`)
   }
 
-  // --- темп (тот же, что у метронома/футера) ---
-  // Только на время работы с битом: в загруженную песню не пишется, после
-  // выхода из редактора вернётся её темп (app.ts).
-  function commitBpmDraft() {
-    if (bpmDraft === null) return
-    const value = bpmDraft
-    bpmDraft = null
-    if (value.trim() === '') render()
-    else setBpm(Number(value), { temporary: true })
-  }
+  // --- темп бита: свой у каждого бита, сохраняется в нём ---
+  const tempo = createTempoField({
+    key: 'beat-bpm',
+    get: () => currentBeat()?.bpm ?? CONFIG.DEFAULT_BPM,
+    set: (bpm) => updateBeat({ bpm: clampBpm(bpm) }),
+    rerender: () => render(),
+    buttonClass: 'tempo-button',
+    inputClass: 'input tempo-input',
+  })
 
   // --- строки-инструменты ---
   function addRole(role: DrumRole) {
@@ -233,49 +209,10 @@ export function mountBeatEditorScreen(
     )
   }
 
-  // BPM — общий с метрономом/футером; тап — вписать вручную, как в
-  // metronomeScreen.ts. Играть — кнопкой в футере.
+  // Темп бита; тап — вписать вручную, как на метрономе. Играть — кнопкой в
+  // футере.
   function renderBpm(): HTMLElement {
-    const bpm = getState().bpm
-    const bpmEl: HTMLElement =
-      bpmDraft !== null
-        ? h('input', {
-            type: 'text',
-            className: 'input tempo-input',
-            key: 'beat-bpm',
-            inputMode: 'numeric',
-            autocomplete: 'off',
-            'aria-label': `Темп, от ${CONFIG.MIN_BPM} до ${CONFIG.MAX_BPM}`,
-            value: bpmDraft,
-            onInput: (e: Event) => (bpmDraft = keepDigits(e.target as HTMLInputElement, 3)),
-            onKeyDown: (e: KeyboardEvent) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-              if (e.key === 'Escape') {
-                bpmDraft = null
-                render()
-              }
-            },
-            // Не во время перерисовки (см. metronomeScreen.ts).
-            onChange: () => !isRemounting() && commitBpmDraft(),
-            onBlur: () => !isRemounting() && commitBpmDraft(),
-          })
-        : h(
-            'button',
-            {
-              type: 'button',
-              className: 'tempo-button',
-              onClick: () => {
-                bpmDraft = String(bpm)
-                render()
-                const input = belowGrid.querySelector<HTMLInputElement>('.tempo-input')
-                input?.focus()
-                input?.select()
-              },
-            },
-            String(bpm)
-          )
-
-    return h('div', { className: 'card row row--center' }, bpmEl)
+    return h('div', { className: 'card row row--center' }, tempo.render(), h('span', { className: 'text-small text-sub' }, 'BPM'))
   }
 
   const aboveGrid = h('div', {})
@@ -293,10 +230,6 @@ export function mountBeatEditorScreen(
       return
     }
     if (!layout.isConnected) mount(container, layout)
-    // Движку — каждая новая версия бита: свои правки, бит, пришедший из БД
-    // позже открытия экрана (обновили страницу в редакторе), правка с
-    // другого устройства.
-    syncEngine(beat)
     mount(aboveGrid, renderMeterChoice(beat))
     aboveGrid.hidden = !aboveGrid.firstChild
     grid.update(beat)

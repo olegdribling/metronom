@@ -11,7 +11,7 @@ const str = (steps: boolean[]) => steps.map((v) => (v ? 'x' : '.')).join('')
 
 function beat(...rows: string[]): Beat {
   return {
-    id: 'b', kind: 'beat', name: 'b', steps: rows[0].length, beatsPerBar: 1, beatDivision: 4, kitId: 'real',
+    id: 'b', kind: 'beat', name: 'b', steps: rows[0].length, beatsPerBar: 1, beatDivision: 4, kitId: 'real', bpm: 120,
     tracks: rows.map((r, i) => ({ role: (['hihat', 'snare', 'kick'] as const)[i], steps: bits(r) })),
   }
 }

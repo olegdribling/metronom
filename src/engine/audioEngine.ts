@@ -60,9 +60,9 @@ export interface AudioEngine {
   setVoiceCount(v: boolean): void
   setBeatsPerBar(n: number): void
   /** Деление доли — на сколько «ударов» разбивается одна доля (кольцо
-   * метронома, см. metronomeScreen.ts). В режиме простого клика (без
-   * песни/паттерна и без счёта голосом) удары внутри доли тоже звучат —
-   * обычным кликом, в отличие от акцента на самой доле. */
+   * метронома, см. metronomeScreen.ts). Без паттерна удары внутри доли тоже
+   * звучат — обычным кликом (доля — акцентом) или, при счёте голосом,
+   * номером внутри доли. */
   setBeatDivision(n: number): void
   /** Повторный вызов, пока движок запускается или играет, ничего не делает. */
   start(): Promise<void>
@@ -319,19 +319,20 @@ export function createAudioEngine(): AudioEngine {
           }
         }
 
-        // Тики кольца метронома (деление доли) — звучат обычным (не
-        // акцентным) кликом, но только в режиме простого клика: если есть
-        // паттерн, пауза или включён счёт голосом, они спорили бы за долю с
-        // тем звуком — как и сама доля выше. t=0 совпадает по времени с
-        // 'beat'-событием выше (subBeat уже становится 0 при его обработке),
-        // поэтому здесь t=1..N-1.
+        // Тики кольца метронома (деление доли, мелкие точки) — звучат там,
+        // где нет паттерна и паузы: обычным (не акцентным) кликом, а при
+        // счёте голосом — номером внутри доли: one, two, three, four, two,
+        // two, three, four, … (крупная точка — номер доли, решение
+        // пользователя). t=0 совпадает по времени с 'beat'-событием выше
+        // (subBeat уже становится 0 при его обработке), поэтому здесь
+        // t=1..N-1; голосов — до восьми.
         const tickDuration = 60 / bpm / beatDivision
         for (let t = 1; t < beatDivision; t++) {
           const tickTime = scheduledTime + t * tickDuration
           visualQueue.push({ time: tickTime, type: 'tick', subBeat: t })
-          if (!usePatternSounds && !silent && !voiceCount) {
-            clickSound(tickTime, false)
-          }
+          if (usePatternSounds || silent) continue
+          if (!voiceCount) clickSound(tickTime, false)
+          else if (t + 1 <= 8) playInstrumentSound(`voice_${t + 1}`, tickTime)
         }
       }
 

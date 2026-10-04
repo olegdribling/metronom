@@ -86,6 +86,13 @@ export function songMeter(song: Song): Meter {
 /** Долей в секции при размере песни. */
 export const sectionBeatCount = (section: Section, beatsPerBar: number): number => section.bars * beatsPerBar
 
+/** Песня с новым размером такта (строка темпа на экране песни). Филлы за
+ * новым концом секций убираются (pruneFills). */
+export function withSongMeter(song: Song, meter: Meter): Song {
+  const next = clampMeter(meter)
+  return { ...song, ...next, sections: pruneFills(song.sections, next.beatsPerBar) }
+}
+
 /** Филлы, начинающиеся за концом своей секции (секцию укоротили, в такте
  * стало меньше долей), убираются — их квадратика больше нет, ни увидеть, ни
  * снять их было бы нельзя. */
@@ -105,16 +112,18 @@ export const beatLengthInBeats = (beat: Beat | undefined): number => beat?.beats
  * у движка (soundSourceAt в engine/audioEngine.ts): грув секции по кругу от
  * начала секции → паттерн песни по кругу от начала песни → ничего (пустая
  * сетка 1/4: звучит пауза, пока не поставите ноты). Филл на доле копирует
- * сам экран — здесь только то, что под ним. */
+ * сам экран — здесь только то, что под ним. Темп бита — темп песни: в
+ * редакторе он звучит так же, как в ней. */
 export function sliceForBeat(song: Song, sectionIndex: number, at: number, id: string, beats: Beat[]): Beat {
   const sec = song.sections[sectionIndex]
   const name = `${sec.name} · доля ${at + 1}`
+  const bpm = song.bpm
   const groove = sec.beatId ? beats.find((b) => b.id === sec.beatId) : undefined
   if (groove) {
     const m = groove.beatDivision
     const offset = (at * m) % groove.steps
     return {
-      id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: groove.kitId,
+      id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: groove.kitId, bpm,
       tracks: groove.tracks.map((t) => ({ role: t.role, steps: Array.from({ length: m }, (_, i) => !!t.steps[offset + i]) })),
     }
   }
@@ -129,8 +138,8 @@ export function sliceForBeat(song: Song, sectionIndex: number, at: number, id: s
     const tracks = pattern.tracks
       .filter((t) => roleById[t.id])
       .map((t) => ({ role: roleById[t.id], steps: Array.from({ length: m }, (_, i) => !!t.steps[(offset + i) % pattern.steps]) }))
-    return { id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: DEFAULT_KIT_ID, tracks }
+    return { id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: DEFAULT_KIT_ID, bpm, tracks }
   }
   const roles: DrumRole[] = ['hihat', 'snare', 'kick']
-  return { id, kind: 'break', name, steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: DEFAULT_KIT_ID, tracks: roles.map((role) => ({ role, steps: [false, false, false, false] })) }
+  return { id, kind: 'break', name, steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: DEFAULT_KIT_ID, bpm, tracks: roles.map((role) => ({ role, steps: [false, false, false, false] })) }
 }

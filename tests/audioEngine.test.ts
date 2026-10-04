@@ -294,3 +294,24 @@ test('отписка от подсветки освобождает слот, т
   engine.stop() // сбрасывает состояние — уведомляет слушателя
   assert.deepEqual(calls, ['B'])
 })
+
+test('счёт голосом — на каждой точке: крупная — номер доли, мелкие — номер внутри доли', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  engine.setBeatDivision(4)
+  engine.setVoiceCount(true)
+  // Метроном 120 точек в минуту при 4 точках на долю — движку 30 долей в
+  // минуту (data/engineSettings.ts): точка раз в 0,5 с.
+  engine.setBpm(30)
+  await engine.start()
+  advance(8200) // круг 4/4 — 16 точек по 0,5 с
+  const voice = (n: number) => `sound/Voices/number_${n}.wav`
+  // Первые 17: тики доли планируются вместе с ней, заранее.
+  assert.deepEqual(
+    played.slice(0, 17).map((p) => p.sound),
+    [1, 2, 3, 4, 2, 2, 3, 4, 3, 2, 3, 4, 4, 2, 3, 4, 1].map(voice),
+    'one two three four, two two three four, three two three four, four two three four, one…'
+  )
+  const gaps = played.slice(1).map((p, i) => Math.round((p.time - played[i].time) * 1000))
+  assert.ok(gaps.every((g) => g === 500), `точка раз в 0,5 с, получили: ${gaps.join(',')}`)
+})

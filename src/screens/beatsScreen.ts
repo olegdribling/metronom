@@ -5,7 +5,7 @@ import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
 import { icon } from '../icons.ts'
-import { DEFAULT_KIT_ID } from '../config.ts'
+import { CONFIG, DEFAULT_KIT_ID } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 
@@ -27,6 +27,7 @@ function createDefaultBeat(): Beat {
     beatsPerBar: DEFAULT_BEATS_PER_BAR,
     beatDivision: DEFAULT_BEAT_DIVISION,
     kitId: DEFAULT_KIT_ID,
+    bpm: CONFIG.DEFAULT_BPM,
     tracks: DEFAULT_ROLES.map((role) => ({ role, steps: Array(totalSteps).fill(false) })),
   }
 }

@@ -3,6 +3,7 @@
 import { Beat, BeatTrack } from '../types.ts'
 import { BEAT_MAX_STEPS, CONFIG, DEFAULT_KIT_ID, DRUM_KITS, DRUM_ROLES } from '../config.ts'
 import { fitMeter } from './beatMeter.ts'
+import { clampBpm } from './songs.ts'
 
 // Приводит бит из БД к актуальной модели: длина в шагах в пределах
 // 1..BEAT_MAX_STEPS, track.steps ровно такой длины, размер — по длине
@@ -25,6 +26,7 @@ export function normalizeBeat(raw: Partial<Beat> & { id: string; bars?: number }
     kind: raw.kind === 'break' ? 'break' : 'beat',
     name: (typeof raw.name === 'string' && raw.name.slice(0, CONFIG.MAX_NAME_LENGTH)) || 'Бит',
     kitId: DRUM_KITS.some((k) => k.id === raw.kitId) ? raw.kitId! : DEFAULT_KIT_ID,
+    bpm: clampBpm(raw.bpm),
     ...fitMeter(steps, { beatsPerBar, beatDivision }),
     steps,
     tracks,

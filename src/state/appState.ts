@@ -3,23 +3,21 @@
 // свой контейнер (кроме "горячего" пути — подсветки битов, см.
 // screens/metronomeScreen.ts, там обновление идёт напрямую в DOM,
 // в обход перерисовки всего экрана, как и в v1).
-import { Beat, Meter, PlaylistInfo, Song, ThemeKey } from '../types.ts'
+import { Beat, MetronomeSettings, PlaylistInfo, Song, ThemeKey } from '../types.ts'
 import { CONFIG, DEFAULT_METER } from '../config.ts'
 import type { UserLibrary } from '../data/userLibrary.ts'
 import { openUserLibrary } from '../data/userLibrary.ts'
-import { clampBpm, clampMeter, pruneFills, songMeter } from '../data/songs.ts'
+import { clampBpm, clampMeter } from '../data/songs.ts'
 import { signOutUser, type AppUser } from '../data/auth.ts'
 
 export interface AppState {
   themeId: ThemeKey
+  /** «Голос при смене секции» — для песен (настройки). */
   voiceCues: boolean
-  voiceCount: boolean
-  /** Текущий темп. Открыли песню — её темп; правка на метрономе пишется и в
-   * песню (setBpm). */
-  bpm: number
-  /** Размер такта метронома без песни — свой, запоминается между запусками.
-   * С песней действует её размер (currentMeter). */
-  metronomeMeter: Meter
+  /** Страница «Метроном»: свои темп, размер, голос — не зависят от песен и
+   * битов, запоминаются между запусками (решение пользователя). У песни и
+   * бита темп и размер свои — хранятся в них. */
+  metronome: MetronomeSettings
   samplesLoaded: boolean
   /** Вошедший через Google пользователь (data/auth.ts); null — не вошёл. */
   user: AppUser | null
@@ -34,9 +32,6 @@ export interface AppState {
   /** Песни открытого плейлиста уже пришли (из кэша или с сервера) — до этого
    * экран песни показывает «Загрузка…», а не «не найдена». */
   songsLoaded: boolean
-  /** Загруженная песня: её играет движок и к ней относятся темп и размер на
-   * метрономе (app.ts). null — метроном сам по себе. */
-  currentSongId: number | null
   /** Синхронизация с аккаунтом остановилась — текст для плашки в футере. */
   connectionError: string | null
   beats: Beat[]
@@ -64,20 +59,31 @@ function writeStored(key: string, value: string): void {
   }
 }
 
-function loadMetronomeMeter(): Meter {
+function readJson(key: string): Record<string, unknown> | null {
   try {
-    return clampMeter(JSON.parse(readStored('metronom_meter') ?? 'null') ?? DEFAULT_METER)
+    const value = JSON.parse(readStored(key) ?? 'null')
+    return value && typeof value === 'object' ? value : null
   } catch {
-    return { ...DEFAULT_METER }
+    return null
+  }
+}
+
+// Настройки метронома; до них размер и голос хранились отдельными ключами
+// (metronom_meter, metronom_voice_count) — подхватываем, чтобы не сбросить.
+function loadMetronome(): MetronomeSettings {
+  const saved = readJson('metronom_metronome') ?? {}
+  const oldMeter = readJson('metronom_meter') ?? DEFAULT_METER
+  return {
+    bpm: clampBpm(saved.bpm ?? CONFIG.DEFAULT_BPM),
+    ...clampMeter({ ...oldMeter, ...saved }),
+    voiceCount: typeof saved.voiceCount === 'boolean' ? saved.voiceCount : readStored('metronom_voice_count') === 'true',
   }
 }
 
 const state: AppState = {
   themeId: (readStored('metronom_theme') as ThemeKey) || 'minimal',
   voiceCues: readStored('metronom_voice_cues') === 'true',
-  voiceCount: readStored('metronom_voice_count') === 'true',
-  bpm: CONFIG.DEFAULT_BPM,
-  metronomeMeter: loadMetronomeMeter(),
+  metronome: loadMetronome(),
   samplesLoaded: false,
   user: null,
   authReady: false,
@@ -85,7 +91,6 @@ const state: AppState = {
   playlistId: null,
   songs: [],
   songsLoaded: false,
-  currentSongId: null,
   connectionError: null,
   beats: [],
   beatsLoaded: false,
@@ -100,9 +105,6 @@ let lastPlaylistLoaded = false
 // Последний плейлист открываем сам один раз — при входе. Если пользователь
 // потом вернулся к списку «Мои плейлисты», снимки его туда не выдёргивают.
 let autoOpenDone = false
-// Песня, чей темп уже применён: темп песни ставится один раз при её открытии
-// (или когда она пришла из БД после открытия), дальше его меняют отдельно.
-let tempoAppliedFor: number | null = null
 const listeners = new Set<Listener>()
 
 function notify() {
@@ -123,23 +125,6 @@ export function patchState(patch: Partial<AppState>): void {
   notify()
 }
 
-export function currentSong(s: AppState = state): Song | undefined {
-  return s.currentSongId === null ? undefined : s.songs.find((song) => song.id === s.currentSongId)
-}
-
-export function currentMeter(s: AppState = state): Meter {
-  const song = currentSong(s)
-  return song ? songMeter(song) : s.metronomeMeter
-}
-
-function applySongTempo() {
-  const song = currentSong()
-  if (song && tempoAppliedFor !== song.id) {
-    tempoAppliedFor = song.id
-    state.bpm = song.bpm
-  }
-}
-
 function applyCurrentPlaylist() {
   if (!autoOpenDone && playlistsLoaded && lastPlaylistLoaded) {
     autoOpenDone = true
@@ -156,7 +141,6 @@ function setOpenPlaylist(id: string | null) {
     state.playlistId = id
     state.songs = []
     state.songsLoaded = false
-    state.currentSongId = null
   }
   library?.watchSongs(id)
 }
@@ -186,7 +170,6 @@ function attachLibrary(lib: UserLibrary) {
     if (playlistId !== state.playlistId) return
     state.songs = songs
     state.songsLoaded = true
-    applySongTempo()
     notify()
   })
   lib.onLastPlaylistChange((id) => {
@@ -213,7 +196,6 @@ function resetLibraryState() {
     playlistId: null,
     songs: [],
     songsLoaded: false,
-    currentSongId: null,
     beats: [],
     beatsLoaded: false,
     connectionError: null,
@@ -238,7 +220,7 @@ export function clearUserLibrary(): void {
 
 /** «Повторить» на плашке ошибки: подписки Firestore после ошибки не
  * оживают сами — открываем библиотеку заново, не сбрасывая открытый
- * плейлист и песню. */
+ * плейлист. */
 export function retrySync(): void {
   if (!state.user) return
   library?.destroy()
@@ -270,47 +252,17 @@ export function createPlaylist(name: string): void {
   openPlaylist(library.createPlaylist(name.trim().slice(0, CONFIG.MAX_NAME_LENGTH) || 'Без названия'))
 }
 
-/** Загрузить песню: её играет движок, к ней относятся темп и размер на
- * метрономе. Темп песни применяется заново (открыли песню — её темп). */
-export function loadSong(songId: number | null): void {
-  state.currentSongId = songId
-  tempoAppliedFor = null
-  applySongTempo()
-  notify()
-}
-
 export function saveSongs(songs: Song[]): void {
   state.songs = songs
   if (library && state.playlistId) library.saveSongs(state.playlistId, songs)
   notify()
 }
 
-/** Темп. С загруженной песней пишется и в неё (это её темп), кроме
- * `temporary` — редактор бита меняет темп только на время работы с битом. */
-export function setBpm(bpm: number, opts: { temporary?: boolean } = {}): void {
-  const next = clampBpm(bpm)
-  state.bpm = next
-  const song = currentSong()
-  if (song && !opts.temporary && song.bpm !== next) {
-    saveSongs(state.songs.map((s) => (s.id === song.id ? { ...s, bpm: next } : s)))
-    return
-  }
-  notify()
-}
-
-/** Размер такта: загруженной песни (в ней и хранится) или метронома. У песни
- * при этом убираются филлы, начинавшиеся за новым концом своей секции. */
-export function setMeter(meter: Meter): void {
-  const next = clampMeter(meter)
-  const song = currentSong()
-  if (song) {
-    saveSongs(
-      state.songs.map((s) => (s.id === song.id ? { ...s, ...next, sections: pruneFills(s.sections, next.beatsPerBar) } : s))
-    )
-    return
-  }
-  state.metronomeMeter = next
-  writeStored('metronom_meter', JSON.stringify(next))
+/** Настройки метронома: темп, размер, голос — только его, запоминаются. */
+export function setMetronome(patch: Partial<MetronomeSettings>): void {
+  const next = { ...state.metronome, ...patch }
+  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount }
+  writeStored('metronom_metronome', JSON.stringify(state.metronome))
   notify()
 }
 
@@ -330,11 +282,5 @@ export function setThemeId(themeId: ThemeKey): void {
 export function setVoiceCues(value: boolean): void {
   state.voiceCues = value
   writeStored('metronom_voice_cues', String(value))
-  notify()
-}
-
-export function setVoiceCount(value: boolean): void {
-  state.voiceCount = value
-  writeStored('metronom_voice_count', String(value))
   notify()
 }

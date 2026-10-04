@@ -4,7 +4,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
-import { clampBars, createEmptySong, normalizeSong, pruneFills, sliceForBeat } from '../src/data/songs.ts'
+import { clampBars, createEmptySong, normalizeSong, pruneFills, sliceForBeat, withSongMeter } from '../src/data/songs.ts'
+import { engineSettingsFor, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
 import { stableStringify } from '../src/data/docSync.ts'
 import { Beat, Song } from '../src/types.ts'
@@ -50,6 +51,8 @@ test('normalizeBeat: длина, размер, старые биты в такт
   } as never)
   assert.equal(broken.steps, 128, 'не длиннее BEAT_MAX_STEPS')
   assert.equal(broken.kitId, 'real', 'неизвестный кит — кит по умолчанию')
+  assert.equal(broken.bpm, 120, 'у старого бита темпа нет — 120')
+  assert.equal(normalizeBeat({ id: 'y', steps: 4, bpm: 999 } as never).bpm, 240)
   assert.deepEqual(broken.tracks.map((t) => t.role), ['snare'], 'неизвестная роль отброшена — иначе резолв упал бы')
   assert.ok(broken.tracks[0].steps.every((v) => v === false))
 })
@@ -92,7 +95,7 @@ test('pruneFills: филлы за концом секции уходят при 
 })
 
 const beat = (id: string, steps: boolean[], extra: Partial<Beat> = {}): Beat => ({
-  id, kind: 'beat', name: id, steps: steps.length, beatsPerBar: steps.length / 4, beatDivision: 4, kitId: 'real',
+  id, kind: 'beat', name: id, steps: steps.length, beatsPerBar: steps.length / 4, beatDivision: 4, kitId: 'real', bpm: 120,
   tracks: [{ role: 'hihat', steps }],
   ...extra,
 })
@@ -146,4 +149,55 @@ test('resolveSongForEngine: биты по ссылкам, удалённый б�
 test('stableStringify не зависит от порядка ключей', () => {
   assert.equal(stableStringify({ b: 1, a: { d: [2, { y: 1, x: 2 }], c: 3 } }), stableStringify({ a: { c: 3, d: [2, { x: 2, y: 1 }] }, b: 1 }))
   assert.equal(stableStringify({ a: undefined, b: 1 }), stableStringify({ b: 1 }), 'undefined-поля Firestore не хранит')
+})
+
+test('sliceForBeat: темп нового бита — темп песни', () => {
+  const song = { ...createEmptySong('s'), bpm: 93 }
+  assert.equal(sliceForBeat(song, 0, 0, 'n', []).bpm, 93)
+})
+
+test('withSongMeter: размер в пределах, филлы за концом секций уходят', () => {
+  const song: Song = {
+    ...createEmptySong('s'),
+    sections: [{ id: 'v', name: 'VERSE', bars: 1, comment: '', intro: false, fills: [{ at: 3, beatId: 'f' }] }],
+  }
+  const next = withSongMeter(song, { beatsPerBar: 3, beatDivision: 99 })
+  assert.deepEqual([next.beatsPerBar, next.beatDivision], [3, 8])
+  assert.deepEqual(next.sections[0].fills, [])
+})
+
+const metronome = { bpm: 120, beatsPerBar: 4, beatDivision: 4, voiceCount: true }
+
+test('метроном: BPM — скорость каждой точки, движку — BPM доли', () => {
+  const s = engineSettingsFor({ kind: 'metronome' }, { metronome, songs: [], beats: [], voiceCues: true })!
+  assert.equal(s.bpm, 30, '120 точек в минуту при 4 точках на долю — 30 долей в минуту')
+  assert.deepEqual([s.beatsPerBar, s.beatDivision, s.voiceCount, s.voiceCues], [4, 4, true, false])
+  assert.equal(s.content, null, 'метроном — щелчок, без песни')
+})
+
+test('песня и бит — со своими темпом и размером, метроном на них не влияет', () => {
+  const song: Song = { ...createEmptySong('s'), bpm: 90, beatsPerBar: 3, beatDivision: 2 }
+  const b = beat('b', [true, false, false, false, false, false])
+  const inputs = { metronome, songs: [song], beats: [{ ...b, bpm: 70, beatsPerBar: 2, beatDivision: 3 }], voiceCues: true }
+
+  const forSong = engineSettingsFor({ kind: 'song', songId: song.id }, inputs)!
+  assert.deepEqual([forSong.bpm, forSong.beatsPerBar, forSong.beatDivision], [90, 3, 2])
+  assert.equal(forSong.voiceCount, false, 'счёт вслух — настройка метронома')
+  assert.equal(forSong.voiceCues, true, 'голос при смене секции — для песен')
+
+  const forBeat = engineSettingsFor({ kind: 'beat', beatId: 'b' }, inputs)!
+  assert.deepEqual([forBeat.bpm, forBeat.beatsPerBar, forBeat.beatDivision, forBeat.voiceCount], [70, 2, 3, false])
+  const asSong = songForEngine(forBeat.content)!
+  assert.deepEqual(asSong.sections, [], 'бит играет без секций — ровно своей длиной по кругу')
+  assert.equal(asSong.pattern.stepsPerBeat, 3)
+
+  assert.equal(engineSettingsFor({ kind: 'song', songId: 404 }, inputs), null, 'нет песни — играть нечего')
+  assert.equal(engineSettingsFor({ kind: 'beat', beatId: 'нет' }, inputs), null)
+})
+
+test('sameSource', () => {
+  assert.equal(sameSource({ kind: 'song', songId: 1 }, { kind: 'song', songId: 1 }), true)
+  assert.equal(sameSource({ kind: 'song', songId: 1 }, { kind: 'song', songId: 2 }), false)
+  assert.equal(sameSource({ kind: 'metronome' }, { kind: 'beat', beatId: 'b' }), false)
+  assert.equal(sameSource({ kind: 'beat', beatId: 'b' }, { kind: 'beat', beatId: 'b' }), true)
 })

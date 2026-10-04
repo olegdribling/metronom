@@ -21,6 +21,7 @@
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
    .dial__meter        — бейдж «долей/деление» (тап — редактировать); --active — выбранный
    .dial__meter-editor — всплывающая под бейджем панель размера такта
+                         (--end — прижата к правому краю)
    .metronome          — экран метронома: кольцо, степперы BPM (__steppers)
    .stepper-value      — число между кнопками «−»/«+»
    .tempo-button       — крупный BPM вне кольца (редактор бита); .tempo-input — его ввод
@@ -279,6 +280,12 @@
   margin-top: var(--space-2);
   width: 220px;
   z-index: 10;
+}
+/* Бейдж у правого края (строка темпа песни) — панель к краю, не за экран. */
+.dial__meter-editor--end {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .metronome { align-items: center; }
