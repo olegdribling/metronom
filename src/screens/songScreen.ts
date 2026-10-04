@@ -38,6 +38,7 @@ import {
   sectionBeatCount,
   sliceForBeat,
   songMeter,
+  squareContent,
   withSongMeter,
 } from '../data/songs.ts'
 
@@ -65,8 +66,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   let shownBeat = -1
   let shownSection = -1
   let lastPlayback: PlaybackState = engine.playbackState
-  // Открытый выбор филла: секция и доля (от начала секции, с 0).
-  let fillPicker: { sectionId: string; at: number } | null = null
+  // Открытое меню квадратика: секция, доля (от начала секции, с 0) и открыт
+  // ли в нём список битов («Из списка»).
+  let fillPicker: { sectionId: string; at: number; list: boolean } | null = null
   let focusPending = opts.focusSectionId
 
   function currentSong(): Song | undefined {
@@ -169,9 +171,29 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     opts.onEditBeat(id, sectionId)
   }
 
-  function removeFill(sectionId: string, at: number) {
-    fillPicker = null
-    updateSection(sectionId, { fills: (sectionById(sectionId)?.fills ?? []).filter((f) => f.at !== at) })
+  // «Копировать влево/вправо»: квадратик целиком — в соседний (решение
+  // пользователя). Что именно копируется — squareContent (data/songs.ts):
+  // филл на эту долю — он сам, кусок филла/грува/паттерна — новый бит на
+  // долю, только щелчок — у соседа просто снимается его филл. Филл,
+  // стоявший на соседнем квадратике, заменяется. Меню переезжает на копию —
+  // можно жать дальше, как копия вбок в сетке бита.
+  function copyBeside(sectionId: string, at: number, direction: 1 | -1) {
+    const song = currentSong()
+    const index = song?.sections.findIndex((s) => s.id === sectionId) ?? -1
+    if (!song || index < 0) return
+    const sec = song.sections[index]
+    const target = at + direction
+    if (target < 0 || target >= sectionBeatCount(sec, song.beatsPerBar)) return
+    const content = squareContent(song, index, at, `beat_${Date.now()}`, getState().beats)
+    const fills = (sec.fills ?? []).filter((f) => f.at !== target)
+    if (content && 'beat' in content) {
+      saveBeats([...getState().beats, content.beat])
+      fills.push({ at: target, beatId: content.beat.id })
+    } else if (content) {
+      fills.push({ at: target, beatId: content.beatId })
+    }
+    fillPicker = { sectionId, at: target, list: false }
+    updateSection(sectionId, { fills: fills.sort((a, b) => a.at - b.at) })
   }
 
   function addSection() {
@@ -239,7 +261,6 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       key: `${keyPrefix}-bars`,
       inputMode: 'numeric',
       autocomplete: 'off',
-      'aria-label': `Тактов, от 1 до ${CONFIG.MAX_SECTION_BARS}`,
       value: String(data.bars),
       // Пока печатают — только запоминаем число (пустое поле не трогаем, «3»
       // по пути к «32» не обрезаем); в пределы приводим, когда ввод закончен.
@@ -307,7 +328,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         'div',
         { className: 'row row--3' },
         button('Сохранить', { variant: 'accent', iconName: 'floppy-disk', onClick: onSubmit }),
-        button('', { iconName: 'x', onClick: onCancel, ariaLabel: 'Отмена' })
+        button('', { iconName: 'x', onClick: onCancel })
       )
     )
   }
@@ -338,7 +359,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         dataset: { beat: String(firstBar * beatsPerBar + i) },
         onClick: () => {
           const same = fillPicker?.sectionId === sec.id && fillPicker.at === i
-          fillPicker = same ? null : { sectionId: sec.id, at: i }
+          fillPicker = same ? null : { sectionId: sec.id, at: i, list: false }
           render()
         },
       })
@@ -348,49 +369,52 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     return grid
   }
 
-  // Выбор филла для доли: список битов библиотеки (имя, размер, сколько
-  // долей займёт) + «Убрать», если с этой доли (или поверх неё) уже стоит филл.
-  function renderFillPicker(sec: Section, at: number): HTMLElement {
-    const fills = sec.fills ?? []
-    const startsHere = fills.find((f) => f.at === at)
-    const covering = startsHere ?? fills.find((f) => at > f.at && at < f.at + fillLength(f.beatId))
+  // Меню квадратика (решение пользователя — только кнопки): «Редактировать»,
+  // «Из списка» (список битов библиотеки — вставить филл с этой доли),
+  // «Копировать влево/вправо» (на крайнем квадратике секции — неактивна), ×.
+  function renderFillPicker(sec: Section, at: number, list: boolean, beatsPerBar: number): HTMLElement {
+    const startsHere = (sec.fills ?? []).find((f) => f.at === at)
     const beats = getState().beats
+    const last = sectionBeatCount(sec, beatsPerBar) - 1
     return h(
       'div',
       { className: 'card card--inset stack stack--2' },
+      // Только иконки (решение пользователя) — те же, что в тулбаре сетки
+      // бита.
       h(
         'div',
         { className: 'row' },
-        h('span', { className: 'grow text-bold' }, `Филл с доли ${at + 1}`),
-        button('Редактировать', { iconName: 'pencil-simple', onClick: () => editAt(sec.id, at) }),
-        iconButton('x', { onClick: () => { fillPicker = null; render() }, ariaLabel: 'Закрыть' })
+        iconButton('pencil-simple', { ariaLabel: 'Редактировать', onClick: () => editAt(sec.id, at) }),
+        iconButton('list', {
+          ariaLabel: 'Из списка',
+          onClick: () => {
+            fillPicker = { sectionId: sec.id, at, list: !list }
+            render()
+          },
+        }),
+        iconButton(['caret-left', 'copy'], { ariaLabel: 'Копировать влево', disabled: at <= 0, onClick: () => copyBeside(sec.id, at, -1) }),
+        iconButton(['copy', 'caret-right'], { ariaLabel: 'Копировать вправо', disabled: at >= last, onClick: () => copyBeside(sec.id, at, 1) }),
+        h('div', { className: 'push-right' }, iconButton('x', { onClick: () => { fillPicker = null; render() }, ariaLabel: 'Закрыть' }))
       ),
-      covering
-        ? h(
-            'div',
-            { className: 'row' },
-            h('span', { className: 'grow text-small text-sub' },
-              covering === startsHere ? `Сейчас: ${beatLabel(covering.beatId)}` : `Доля под филлом ${beatLabel(covering.beatId)} с доли ${covering.at + 1}`),
-            button('Убрать филл', { variant: 'danger', onClick: () => removeFill(sec.id, covering.at) })
-          )
-        : null,
-      beats.length === 0
-        ? h('p', { className: 'text-small text-muted' }, 'В библиотеке пока нет битов — создайте их в «Битах».')
-        : h(
-            'div',
-            { className: 'stack stack--2' },
-            ...beats.map((b) =>
-              h(
-                'button',
-                { type: 'button', className: 'list-row', onClick: () => assignFill(sec.id, at, b.id) },
-                icon('drum'),
-                h('span', { className: 'grow' }, b.name),
-                h('span', { className: 'badge' }, `${b.beatsPerBar}/${b.beatDivision}`),
-                h('span', { className: 'badge' }, `${b.beatsPerBar} дол.`),
-                startsHere?.beatId === b.id ? icon('check-circle') : null
+      !list
+        ? null
+        : beats.length === 0
+          ? h('p', { className: 'text-small text-muted' }, 'В библиотеке пока нет битов — создайте их в «Битах».')
+          : h(
+              'div',
+              { className: 'stack stack--2' },
+              ...beats.map((b) =>
+                h(
+                  'button',
+                  { type: 'button', className: 'list-row', onClick: () => assignFill(sec.id, at, b.id) },
+                  icon('drum'),
+                  h('span', { className: 'grow' }, b.name),
+                  h('span', { className: 'badge' }, `${b.beatsPerBar}/${b.beatDivision}`),
+                  h('span', { className: 'badge' }, `${b.beatsPerBar} дол.`),
+                  startsHere?.beatId === b.id ? icon('check-circle') : null
+                )
               )
             )
-          )
     )
   }
 
@@ -426,9 +450,10 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       ),
       sec.comment ? h('div', { className: 'mt-2 text-bold' }, sec.comment) : null,
       sec.beatId ? h('div', { className: 'mt-2 text-small text-sub' }, `Бит: ${beatLabel(sec.beatId)}`) : null,
+      // Филлы видны только отметками на квадратиках — без строк «Филл … с
+      // доли N» (решение пользователя).
       barGrid(sec, beatsPerBar, firstBar),
-      ...(sec.fills ?? []).map((f) => h('div', { className: 'mt-1 text-small text-sub' }, `Филл ${beatLabel(f.beatId)} с доли ${f.at + 1}`)),
-      fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at) : null,
+      fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at, fillPicker.list, beatsPerBar) : null,
       editingId === sec.id
         ? sectionForm(`edit-${sec.id}`, editData, saveEdit, () => {
             editingId = null

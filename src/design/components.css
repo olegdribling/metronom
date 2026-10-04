@@ -8,11 +8,13 @@
    .btn--danger        — опасное действие (удалить)
    .icon-btn           — круглая кнопка только с иконкой (транспорт, футер);
                          --current — текущий раздел в футере, --transport —
-                         большая Play/Stop
+                         большая Play/Stop, --pair — две иконки (таблетка)
    .card               — карточка (секция песни, панель настроек)
    .card--active       — карточка текущей воспроизводимой секции
    .card--inset        — карточка внутри карточки (выбор филла в секции)
    .input               — поле ввода / select; --center — число по центру
+   .list-item          — строка списка + красная корзина справа
+                         (components/deletableRow.ts)
    .list-row           — строка списка (песня, плейлист); --flat — строка
                          внутри карточки-списка (.settings-list), --last — последняя
    .dial               — кольцо метронома (доли/деление по кругу, флеш на удар)
@@ -109,6 +111,12 @@
 .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .icon-btn:disabled:active { transform: none; }
 .icon-btn--current { border-color: var(--color-border-accent); }
+/* Две иконки в одной кнопке («копия влево/вправо») — таблетка, не круг. */
+.icon-btn--pair {
+  width: auto;
+  padding: 0 var(--space-3);
+  gap: 2px;
+}
 .icon-btn--transport {
   width: 56px;
   height: 56px;
@@ -170,6 +178,12 @@
   cursor: pointer;
 }
 .list-row:hover { background: var(--color-surface); }
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.list-item > .list-row { flex: 1; min-width: 0; }
 .list-row--flat {
   border-radius: 0;
   border-left: none;

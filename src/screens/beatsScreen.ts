@@ -1,9 +1,11 @@
-// Экран библиотеки битов/брейков: список + создание. Биты хранятся в
+// Экран библиотеки битов/брейков: список + создание + удаление (корзина в
+// строке, с подтверждением). Биты хранятся в
 // аккаунте (users/{uid}/beats, data/userLibrary.ts) — без входа экран
 // показывает карточку «Войти через Google». Сам редактор — beatEditorScreen.ts.
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
+import { deletableRow } from '../components/deletableRow.ts'
 import { icon } from '../icons.ts'
 import { CONFIG, DEFAULT_KIT_ID } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
@@ -40,6 +42,12 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
     onOpenBeat(beat.id)
   }
 
+  // В песнях, где бит стоит грувом или филлом, остаётся ссылка — там он
+  // показывается «бит удалён», а секция играет паттерн песни.
+  function deleteBeat(beatId: string) {
+    saveBeats(getState().beats.filter((b) => b.id !== beatId))
+  }
+
   function kindBadge(kind: BeatKind) {
     return h('span', { className: 'badge' }, kind === 'beat' ? 'Бит' : 'Брейк')
   }
@@ -63,15 +71,22 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
               'div',
               { className: 'stack stack--2' },
               ...state.beats.map((beat) =>
-                h(
-                  'button',
-                  { type: 'button', className: 'list-row', onClick: () => onOpenBeat(beat.id) },
-                  icon('drum'),
-                  h('span', { className: 'grow' }, beat.name),
-                  kindBadge(beat.kind),
-                  // Бит — один такт своего размера (data/beatMeter.ts); тот же
-                  // бейдж «N/M», что в выборе филла на экране песни.
-                  h('span', { className: 'badge' }, `${beat.beatsPerBar}/${beat.beatDivision}`)
+                deletableRow(
+                  h(
+                    'button',
+                    { type: 'button', className: 'list-row', onClick: () => onOpenBeat(beat.id) },
+                    icon('drum'),
+                    h('span', { className: 'grow' }, beat.name),
+                    kindBadge(beat.kind),
+                    // Бит — один такт своего размера (data/beatMeter.ts); тот же
+                    // бейдж «N/M», что в выборе филла на экране песни.
+                    h('span', { className: 'badge' }, `${beat.beatsPerBar}/${beat.beatDivision}`)
+                  ),
+                  {
+                    ariaLabel: `Удалить бит «${beat.name}»`,
+                    confirmText: `Удалить бит «${beat.name}»? Это нельзя отменить. В песнях, где он стоит, будет «бит удалён».`,
+                    onDelete: () => deleteBeat(beat.id),
+                  }
                 )
               )
             )

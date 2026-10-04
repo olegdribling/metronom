@@ -5,6 +5,7 @@
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
+import { deletableRow } from '../components/deletableRow.ts'
 import { icon } from '../icons.ts'
 import { CONFIG } from '../config.ts'
 import { createEmptySong } from '../data/songs.ts'
@@ -49,7 +50,7 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
             onInput: (e: Event) => (newPlaylistName = (e.target as HTMLInputElement).value),
             onKeyDown: (e: KeyboardEvent) => e.key === 'Enter' && handleCreatePlaylist(),
           }),
-          button('', { iconName: 'plus', variant: 'accent', onClick: handleCreatePlaylist, ariaLabel: 'Создать плейлист' })
+          button('', { iconName: 'plus', variant: 'accent', onClick: handleCreatePlaylist })
         )
       ),
       state.playlists.length === 0
@@ -94,7 +95,7 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
           onInput: (e: Event) => (newSongName = (e.target as HTMLInputElement).value),
           onKeyDown: (e: KeyboardEvent) => e.key === 'Enter' && handleAddSong(),
         }),
-        button('', { iconName: 'plus', variant: 'accent', onClick: handleAddSong, ariaLabel: 'Добавить песню' })
+        button('', { iconName: 'plus', variant: 'accent', onClick: handleAddSong })
       ),
       state.songs.length === 0
         ? h('p', { className: 'text-center text-muted' }, state.songsLoaded ? 'Пока нет песен — добавьте первую выше' : 'Загрузка…')
@@ -102,12 +103,19 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
             'div',
             { className: 'stack stack--2' },
             ...state.songs.map((song) =>
-              h(
-                'button',
-                { type: 'button', className: 'list-row', onClick: () => onOpenSong(song.id) },
-                icon('music-note'),
-                h('span', { className: 'grow' }, song.name),
-                h('span', { className: 'badge' }, `${song.bpm} BPM`)
+              deletableRow(
+                h(
+                  'button',
+                  { type: 'button', className: 'list-row', onClick: () => onOpenSong(song.id) },
+                  icon('music-note'),
+                  h('span', { className: 'grow' }, song.name),
+                  h('span', { className: 'badge' }, `${song.bpm} BPM`)
+                ),
+                {
+                  ariaLabel: `Удалить песню «${song.name}»`,
+                  confirmText: `Удалить песню «${song.name}»? Это нельзя отменить.`,
+                  onDelete: () => saveSongs(getState().songs.filter((s) => s.id !== song.id)),
+                }
               )
             )
           )

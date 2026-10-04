@@ -51,7 +51,7 @@ export function createTempoField(opts: TempoFieldOptions): TempoField {
   return {
     render() {
       if (draft === null) {
-        return h('button', { type: 'button', className: opts.buttonClass, 'aria-label': `Темп ${opts.get()} BPM — изменить`, onClick: open }, String(opts.get()))
+        return h('button', { type: 'button', className: opts.buttonClass, onClick: open }, String(opts.get()))
       }
       return h('input', {
         type: 'text',
@@ -59,7 +59,6 @@ export function createTempoField(opts: TempoFieldOptions): TempoField {
         key: opts.key,
         inputMode: 'numeric',
         autocomplete: 'off',
-        'aria-label': 'Темп, BPM',
         value: draft,
         onInput: (e: Event) => (draft = keepDigits(e.target as HTMLInputElement, 3)),
         onKeyDown: (e: KeyboardEvent) => {
@@ -116,7 +115,7 @@ export function createMeterField(opts: MeterFieldOptions): MeterField {
       const meter = opts.get()
       const badge = h(
         'button',
-        { type: 'button', className: 'dial__meter', 'aria-expanded': String(open), onClick: () => toggle(!open) },
+        { type: 'button', className: 'dial__meter', onClick: () => toggle(!open) },
         `${meter.beatsPerBar}/${meter.beatDivision}`
       )
       if (!open) return h('div', { className: 'dial__meter-anchor' }, badge)

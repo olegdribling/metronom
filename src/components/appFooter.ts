@@ -27,7 +27,7 @@ export function appFooter(props: FooterProps): HTMLDivElement {
         type: 'button',
         className: `icon-btn${props.activeRoute === route ? ' icon-btn--current' : ''}`,
         'aria-label': label,
-        'aria-current': props.activeRoute === route ? 'page' : undefined,
+        'aria-current': props.activeRoute === route,
         onClick: () => props.onNavigate(route),
       },
       icon(iconName)

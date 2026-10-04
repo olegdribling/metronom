@@ -143,3 +143,40 @@ export function sliceForBeat(song: Song, sectionIndex: number, at: number, id: s
   const roles: DrumRole[] = ['hihat', 'snare', 'kick']
   return { id, kind: 'break', name, steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: DEFAULT_KIT_ID, bpm, tracks: roles.map((role) => ({ role, steps: [false, false, false, false] })) }
 }
+
+/** Что в квадратике (доле `at` секции) — для «Копировать влево/вправо»
+ * (screens/songScreen.ts): квадратик копируется в соседний целиком.
+ * - филл ровно на эту долю — он сам (ссылка на тот же бит);
+ * - кусок длинного филла, грува секции или паттерна песни — новый бит на
+ *   одну долю (id — новому биту), темп — песни;
+ * - только щелчок (ни филла, ни грува, ни нот в паттерне) — null.
+ * Правила — как у движка (soundSourceAt в engine/audioEngine.ts). */
+export type SquareContent = { beatId: string } | { beat: Beat } | null
+
+export function squareContent(song: Song, sectionIndex: number, at: number, id: string, beats: Beat[]): SquareContent {
+  const sec = song.sections[sectionIndex]
+  const byId = (beatId: string | undefined) => (beatId ? beats.find((b) => b.id === beatId) : undefined)
+  const covering = (sec.fills ?? [])
+    .filter((f) => {
+      const beat = byId(f.beatId)
+      return !!beat && at >= f.at && at < f.at + beatLengthInBeats(beat)
+    })
+    .sort((a, b) => b.at - a.at)[0]
+  if (covering) {
+    const fill = byId(covering.beatId)!
+    if (covering.at === at && fill.beatsPerBar === 1) return { beatId: fill.id }
+    const m = fill.beatDivision
+    const offset = (at - covering.at) * m
+    return {
+      beat: {
+        id, kind: 'break', name: `${fill.name} · доля ${at - covering.at + 1}`, steps: m, beatsPerBar: 1, beatDivision: m,
+        kitId: fill.kitId, bpm: song.bpm,
+        tracks: fill.tracks.map((t) => ({ role: t.role, steps: Array.from({ length: m }, (_, i) => !!t.steps[offset + i]) })),
+      },
+    }
+  }
+  const hasGroove = !!byId(sec.beatId)
+  const patternHasNotes = !!song.pattern?.tracks.some((t) => t.steps.some(Boolean))
+  if (!hasGroove && !patternHasNotes) return null
+  return { beat: sliceForBeat(song, sectionIndex, at, id, beats) }
+}

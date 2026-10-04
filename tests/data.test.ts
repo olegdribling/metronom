@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
-import { clampBars, createEmptySong, normalizeSong, pruneFills, sliceForBeat, withSongMeter } from '../src/data/songs.ts'
+import { clampBars, createEmptySong, normalizeSong, pruneFills, sliceForBeat, squareContent, withSongMeter } from '../src/data/songs.ts'
 import { engineSettingsFor, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
 import { stableStringify } from '../src/data/docSync.ts'
@@ -200,4 +200,24 @@ test('sameSource', () => {
   assert.equal(sameSource({ kind: 'song', songId: 1 }, { kind: 'song', songId: 2 }), false)
   assert.equal(sameSource({ kind: 'metronome' }, { kind: 'beat', beatId: 'b' }), false)
   assert.equal(sameSource({ kind: 'beat', beatId: 'b' }, { kind: 'beat', beatId: 'b' }), true)
+})
+
+test('squareContent: что копируется из квадратика', () => {
+  const one = beat('one', [true, false, false, true]) // 1/4 — ровно одна доля
+  const two = beat('two', [true, false, false, false, false, true, true, false]) // 2/4
+  const song: Song = {
+    ...createEmptySong('s'),
+    bpm: 101,
+    sections: [
+      { id: 'a', name: 'A', bars: 1, comment: '', intro: false, fills: [{ at: 0, beatId: 'one' }, { at: 2, beatId: 'two' }] },
+      { id: 'b', name: 'B', bars: 1, comment: '', intro: false },
+    ],
+  }
+  assert.deepEqual(squareContent(song, 0, 0, 'n', [one, two]), { beatId: 'one' }, 'филл на одну долю — ссылка на него')
+  const piece = squareContent(song, 0, 3, 'n', [one, two]) as { beat: Beat }
+  assert.deepEqual(piece.beat.tracks[0].steps, [false, true, true, false], 'вторая доля длинного филла')
+  assert.deepEqual([piece.beat.steps, piece.beat.beatsPerBar, piece.beat.bpm], [4, 1, 101])
+  assert.equal(squareContent(song, 1, 0, 'n', [one, two]), null, 'только щелчок')
+  const withPattern: Song = { ...song, pattern: { steps: 2, tracks: [{ id: 'bd', name: 'BD', color: '', sample: '', steps: [true, false] }] } }
+  assert.deepEqual((squareContent(withPattern, 1, 0, 'n', []) as { beat: Beat }).beat.tracks, [{ role: 'kick', steps: [true, false] }], 'кусок паттерна песни')
 })

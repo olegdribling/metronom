@@ -14,9 +14,7 @@ const variantClass: Record<ButtonVariant, string> = {
 
 export function button(
   label: string | Node,
-  /** ariaLabel — для кнопки только с иконкой (label пустой): иначе экранный
-   * диктор прочтёт просто «кнопка». */
-  opts: { variant?: ButtonVariant; onClick?: () => void; disabled?: boolean; iconName?: string; ariaLabel?: string } = {}
+  opts: { variant?: ButtonVariant; onClick?: () => void; disabled?: boolean; iconName?: string } = {}
 ): HTMLButtonElement {
   const children: Node[] = []
   if (opts.iconName) children.push(icon(opts.iconName))
@@ -28,18 +26,21 @@ export function button(
       className: `btn${variantClass[opts.variant ?? 'default']}`,
       onClick: opts.disabled ? undefined : opts.onClick,
       disabled: opts.disabled,
-      'aria-label': opts.ariaLabel,
     },
     ...children
   )
 }
 
+// Несколько иконок (['caret-left', 'copy'] — «копия влево», как в тулбаре
+// сетки бита) — кнопка-«таблетка» (.icon-btn--pair) вместо круга.
 export function iconButton(
-  iconName: string,
+  iconName: string | string[],
   opts: { variant?: ButtonVariant; onClick?: () => void; ariaLabel: string; disabled?: boolean }
 ): HTMLButtonElement {
+  const icons = Array.isArray(iconName) ? iconName : [iconName]
   const cls =
-    opts.variant === 'accent' ? ' icon-btn--accent' : opts.variant === 'danger' ? ' icon-btn--danger' : ''
+    (opts.variant === 'accent' ? ' icon-btn--accent' : opts.variant === 'danger' ? ' icon-btn--danger' : '') +
+    (icons.length > 1 ? ' icon-btn--pair' : '')
   return h(
     'button',
     {
@@ -49,6 +50,6 @@ export function iconButton(
       disabled: opts.disabled,
       'aria-label': opts.ariaLabel,
     },
-    icon(iconName)
+    ...icons.map((name) => icon(name))
   )
 }

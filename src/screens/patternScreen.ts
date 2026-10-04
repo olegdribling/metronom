@@ -83,8 +83,6 @@ export function mountPatternScreen(container: HTMLElement, songId: number, engin
         const cell = h('button', {
           type: 'button',
           className: `step${active ? ' step--on' : ''}`,
-          'aria-label': `${track.name}, шаг ${stepIndex + 1}`,
-          'aria-pressed': String(active),
           dataset: { track: track.id, step: String(stepIndex) },
           onClick: () => toggleStep(track.id, stepIndex),
         })
