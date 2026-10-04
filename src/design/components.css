@@ -21,6 +21,9 @@
                          иконки, лента столбцов, выделение, тулбар, вставка
    .drum-icon          — SVG-иконка роли барабана (components/drumIcons.ts)
    .switch             — переключатель вкл/выкл (--on — включён)
+   .bar-grid           — сетка долей секции песни: квадратик на долю, прошедшие
+                         закрашены (--filled), текущая (--current), первая доля
+                         такта (--bar-start) — как в v1 (screens/songScreen.ts)
    .badge              — маленький текстовый бейдж (например, "4 такта")
    .app-header         — шапка экрана
    .app-footer         — нижняя панель транспорта/навигации
@@ -494,6 +497,33 @@
   margin-top: var(--space-2);
   font-size: var(--font-size-caption);
   color: var(--color-text-sub);
+}
+
+/* Сетка долей секции песни — screens/songScreen.ts, как BeatGrid в v1
+   (SectionCard.tsx): по квадратику на долю, в строке — целые такты
+   (число столбцов выставляет songScreen.ts через --bar-grid-columns).
+   Закраску во время игры переключает songScreen.ts напрямую в DOM. */
+.bar-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--bar-grid-columns, 8), 1fr);
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.bar-grid__cell {
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+.bar-grid__cell--bar-start { background: var(--color-bar-grid-bar-start); }
+.bar-grid__cell--filled {
+  background: var(--color-border-strong);
+  border-color: var(--color-border-strong);
+}
+.bar-grid__cell--current {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .switch {

@@ -16,13 +16,22 @@ import { mountPatternScreen } from './screens/patternScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
 import { mountBeatEditorScreen } from './screens/beatEditorScreen.ts'
+import { Song } from './types.ts'
 
 export function startApp(root: HTMLElement): void {
   const engine = createAudioEngine()
   engine.onSamplesLoadedChange((loaded) => patchState({ samplesLoaded: loaded }))
   engine.onBeatsPerBarChange((n) => patchState({ beatsPerBar: n }))
-  engine.setVoiceCues(getState().voiceCues)
-  engine.setVoiceCount(getState().voiceCount)
+  // Голосовые настройки — в движок и при старте, и на каждое изменение:
+  // экран настроек меняет только appState (setVoiceCues), и раньше
+  // «Голос при смене секции» начинал звучать лишь после перезагрузки (в v1
+  // флаг доходил до движка сразу — через ref в useAudioEngine).
+  const syncVoiceSettings = () => {
+    engine.setVoiceCues(getState().voiceCues)
+    engine.setVoiceCount(getState().voiceCount)
+  }
+  syncVoiceSettings()
+  subscribe(syncVoiceSettings)
   document.documentElement.dataset.theme = getState().themeId
 
   const router = createRouter()
@@ -85,13 +94,33 @@ export function startApp(root: HTMLElement): void {
     screenCleanup = fn(mainSlot)
   }
 
+  // Песня, которую сейчас играет движок. Движок получает песню только через
+  // setSong(), а правят её после загрузки — секции (экран песни), паттерн
+  // (редактор паттерна), другие участники плейлиста (Firestore). Без
+  // пересинхронизации ниже движок играл старую версию: новая песня с одной
+  // вводной «1 2 3 4» крутила только её, хотя секции уже добавлены.
+  let engineSong: Song | null = null
+
   function loadSongIntoEngine(songId: number) {
     const song = getState().songs.find((s) => s.id === songId)
     if (!song) return
     patchState({ currentSongId: songId, bpm: song.bpm })
+    engineSong = song
     engine.setSong(song)
     engine.setBpm(song.bpm)
   }
+
+  // Каждое сохранение песни — новый объект (saveSongs/снимок Firestore),
+  // поэтому сравнение по ссылке и есть «песню изменили». Темп не трогаем —
+  // его меняют отдельно (метроном/футер), не перебиваем.
+  subscribe((state) => {
+    if (!engineSong) return
+    const fresh = state.songs.find((s) => s.id === engineSong!.id)
+    if (fresh && fresh !== engineSong) {
+      engineSong = fresh
+      engine.setSong(fresh)
+    }
+  })
 
   router.on('/metronome', () => {
     setScreen('metronome', () => 'Metronom')
@@ -119,6 +148,7 @@ export function startApp(root: HTMLElement): void {
       mountSongScreen(
         c,
         songId,
+        engine,
         () => router.navigate(`/song/${songId}/pattern`),
         () => router.navigate('/playlist')
       )
@@ -143,6 +173,9 @@ export function startApp(root: HTMLElement): void {
     // onRegisterSave при монтировании (mountScreen ниже выполняется сразу
     // после setScreen, до первого возможного клика по иконке).
     let requestSave: () => void = () => {}
+    // Движок с этого момента играет бит (редактор сам грузит его через
+    // setSong) — правки песни больше не должны его перебивать.
+    engineSong = null
     setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
       onBack: () => router.navigate('/beats'),

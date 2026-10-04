@@ -42,6 +42,9 @@
   --color-grid-playhead: rgba(31, 41, 55, 0.14);
   --color-grid-selection: rgba(31, 41, 55, 0.06);
   --color-grid-invalid: #f87171;
+
+  /* Сетка долей секции песни (.bar-grid, screens/songScreen.ts) */
+  --color-bar-grid-bar-start: #f3f4f6;
 }
 
 :root {

@@ -302,8 +302,12 @@ export function createAudioEngine(): AudioEngine {
       while (visualQueue.length && visualQueue[0].time <= now) {
         const event = visualQueue.shift()!
         if (event.type === 'stop') {
-          resetPlaybackState()
+          // Сначала isPlaying = false, потом сброс — как в stop(): экраны
+          // на сброс смотрят на engine.isPlaying, и в обратном порядке
+          // принимали его за «играет, такт 0, доля 1» (сетка песни
+          // оставалась с подсвеченной первой долей, кольцо — со вспышкой).
           setIsPlaying(false)
+          resetPlaybackState()
           if (timer) {
             clearTimeout(timer)
             timer = null
