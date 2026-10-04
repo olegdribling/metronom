@@ -166,7 +166,7 @@ test('withSongMeter: размер в пределах, филлы за конц�
   assert.deepEqual(next.sections[0].fills, [])
 })
 
-const metronome = { bpm: 120, beatsPerBar: 4, beatDivision: 4, voiceCount: true }
+const metronome = { bpm: 120, beatsPerBar: 4, beatDivision: 4, voiceCount: true, flash: false }
 
 test('метроном: BPM — скорость каждой точки, движку — BPM доли', () => {
   const s = engineSettingsFor({ kind: 'metronome' }, { metronome, songs: [], beats: [], voiceCues: true })!

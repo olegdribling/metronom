@@ -17,12 +17,15 @@
                          внутри карточки-списка (.settings-list), --last — последняя
    .dial               — кольцо метронома (доли/деление по кругу, флеш на удар)
    .dial__dot          — точка на кольце (--large доля, --small деление, --filled)
+   .dial__hand         — стрелка кольца (мигание выключено)
+   .dial__sector       — закрашенный сектор за стрелкой (мигание выключено)
    .dial__center       — центр кольца (BPM + размер такта)
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
    .dial__meter        — бейдж «долей/деление» (тап — редактировать); --active — выбранный
    .dial__meter-editor — всплывающая под бейджем панель размера такта
                          (--end — прижата к правому краю)
-   .metronome          — экран метронома: кольцо, степперы BPM (__steppers)
+   .metronome          — экран метронома: кольцо по центру (__dial-area), внизу
+                         степперы BPM (__steppers) и галочки (__controls)
    .stepper-value      — число между кнопками «−»/«+»
    .tempo-button       — крупный BPM вне кольца (редактор бита); .tempo-input — его ввод
    .step               — клетка шага паттерна (--on — цвет из --cell-color)
@@ -181,8 +184,11 @@
    между ними — деление доли (мелкие точки). См. components/beatRing.ts. */
 .dial {
   position: relative;
-  width: 280px;
-  height: 280px;
+  /* Квадрат по меньшей стороне свободного места (.metronome__dial-area —
+     контейнер размеров): почти во всю ширину, но кнопки внизу влезают. */
+  width: 100cqmin;
+  height: 100cqmin;
+  max-width: 100%;
   margin: 0 auto;
   border-radius: 50%;
   border: 2px solid var(--color-border);
@@ -200,6 +206,28 @@
 @keyframes dial-flash {
   from { background-color: var(--color-accent); }
   to { background-color: transparent; }
+}
+/* Сектор за стрелкой (мигание выключено): от 12 часов до стрелки, растёт
+   прыжками за такт; угол (--sector-angle) ставит beatRing.ts. Под точками,
+   стрелкой и центром. */
+.dial__sector {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--color-dial-sector) var(--sector-angle, 0deg), transparent 0);
+}
+/* Стрелка (мигание выключено): от центра к точке текущего удара, прыжками.
+   Поворот ставит beatRing.ts; под центром с BPM. */
+.dial__hand {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 4px;
+  height: 40%;
+  margin-left: -2px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transform-origin: 50% 100%;
 }
 .dial__dot {
   position: absolute;
@@ -288,7 +316,26 @@
   transform: none;
 }
 
-.metronome { align-items: center; }
+/* Экран метронома на всю высоту .screen: кольцо — по центру свободного
+   места, кнопки темпа и галочки — внизу, над футером. */
+/* height, а не min-height: от неё считается высота .metronome__dial-area, и
+   только с явной высотой Chrome видит её в единицах cq* (с min-height
+   100cqmin давал 0 — кольцо схлопывалось в точку). */
+.metronome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+}
+.metronome__dial-area {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+.metronome__controls { align-items: center; }
 .metronome__steppers {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

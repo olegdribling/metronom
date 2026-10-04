@@ -77,6 +77,7 @@ function loadMetronome(): MetronomeSettings {
     bpm: clampBpm(saved.bpm ?? CONFIG.DEFAULT_BPM),
     ...clampMeter({ ...oldMeter, ...saved }),
     voiceCount: typeof saved.voiceCount === 'boolean' ? saved.voiceCount : readStored('metronom_voice_count') === 'true',
+    flash: saved.flash === true,
   }
 }
 
@@ -261,7 +262,7 @@ export function saveSongs(songs: Song[]): void {
 /** Настройки метронома: темп, размер, голос — только его, запоминаются. */
 export function setMetronome(patch: Partial<MetronomeSettings>): void {
   const next = { ...state.metronome, ...patch }
-  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount }
+  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount, flash: !!next.flash }
   writeStored('metronom_metronome', JSON.stringify(state.metronome))
   notify()
 }

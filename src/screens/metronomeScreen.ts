@@ -1,5 +1,7 @@
-// Экран метронома: кольцо с долями/делением такта по кругу, BPM крупно в
-// центре (тап — вписать вручную), степперы -10/-1/+1/+10 под кольцом.
+// Экран метронома: кольцо с долями/делением такта по кругу (почти во всю
+// ширину, по центру свободного места), BPM крупно в центре (тап — вписать
+// вручную); внизу, над футером, — степперы -10/-1/+1/+10, «Считать вслух» и
+// «Включить мигание» (выключено — по точкам ходит стрелка).
 // Настройки — только метронома (state.metronome): темп, размер, голос, ни на
 // что не влияют и запоминаются; у песен и битов всё своё (решение
 // пользователя). Темп здесь — скорость каждой точки кольца, крупной и
@@ -56,26 +58,38 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
     type: 'checkbox',
     onChange: (e: Event) => setMetronome({ voiceCount: (e.target as HTMLInputElement).checked }),
   })
+  const flashCheckbox = h('input', {
+    type: 'checkbox',
+    onChange: (e: Event) => setMetronome({ flash: (e.target as HTMLInputElement).checked }),
+  })
   mount(
     container,
     h(
       'div',
-      { className: 'stack stack--6 metronome' },
-      ring.element,
+      { className: 'metronome' },
+      h('div', { className: 'metronome__dial-area' }, ring.element),
       h(
         'div',
-        { className: 'metronome__steppers' },
-        ...[-10, -1, 1, 10].map((delta) =>
-          button(delta > 0 ? `+${delta}` : String(delta), { onClick: () => setMetronome({ bpm: metronome().bpm + delta }) })
-        )
-      ),
-      h('label', { className: 'row checkbox-row' }, voiceCheckbox, h('span', {}, 'Считать вслух вместо клика'))
+        { className: 'stack metronome__controls' },
+        h(
+          'div',
+          { className: 'metronome__steppers' },
+          ...[-10, -1, 1, 10].map((delta) =>
+            button(delta > 0 ? `+${delta}` : String(delta), { onClick: () => setMetronome({ bpm: metronome().bpm + delta }) })
+          )
+        ),
+        h('label', { className: 'row checkbox-row' }, voiceCheckbox, h('span', {}, 'Считать вслух вместо клика')),
+        h('label', { className: 'row checkbox-row' }, flashCheckbox, h('span', {}, 'Включить мигание'))
+      )
     )
   )
 
   function render() {
+    const m = metronome()
     renderCenter()
-    voiceCheckbox.checked = metronome().voiceCount
+    voiceCheckbox.checked = m.voiceCount
+    flashCheckbox.checked = m.flash
+    ring.setHandMode(!m.flash)
     updateRing()
   }
 
@@ -84,7 +98,7 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
   // перерисовки экрана — иначе риск сбить аудио-тайминг лишней работой.
   const releasePlayback = engine.onPlaybackState(() => {
     updateRing()
-    if (engine.isPlaying) ring.flash()
+    if (engine.isPlaying && metronome().flash) ring.flash()
   })
 
   const unsubscribe = subscribe(render)
