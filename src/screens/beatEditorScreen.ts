@@ -2,8 +2,10 @@
 // прямоугольником, копии, вставка, заливка, добавление/удаление шагов и
 // строк) — components/beatGrid.ts, повторяет редактор референса
 // (realdrummetronome.com/editor). Здесь — всё вокруг сетки: кит, BPM,
-// сохранение. Размер такта (beat.beatsPerBar/beatDivision) в этом экране
-// не редактируется — только размечает такты в сетке.
+// сохранение. Размер бита (beatsPerBar × beatDivision) не задаётся вручную —
+// он пересчитывается по числу столбцов на каждое изменение длины
+// (data/beatMeter.ts); выбирать приходится только при длине, кратной 12
+// (переключатель над сеткой).
 //
 // Сетка — один живой элемент на весь экран: render() перерисовывает только
 // блоки над и под ней, а ей передаёт свежий бит через grid.update() (иначе
@@ -25,6 +27,7 @@ import { Beat, DrumRole } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, patchState, saveBeats } from '../state/appState.ts'
 import { resolveBeatPattern } from '../data/resolveBeat.ts'
+import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -40,6 +43,7 @@ export function mountBeatEditorScreen(
   let nameDraft = ''
   let showKitPicker = false
   let editingBpm = false
+  let engineSynced = false
 
   function currentBeat(): Beat | undefined {
     return getState().beats.find((b) => b.id === beatId)
@@ -67,6 +71,36 @@ export function mountBeatEditorScreen(
     saveBeats(updated)
     const beat = updated.find((b) => b.id === beatId)
     if (beat) syncEngine(beat)
+  }
+
+  // --- размер: выбор только при неоднозначной длине (кратной 12) ---
+  function setMeter(meter: BeatMeter) {
+    updateBeat(meter)
+    render()
+  }
+
+  function renderMeterChoice(beat: Beat): HTMLElement | null {
+    const options = meterOptions(beat.steps)
+    if (options.length < 2) return null
+    return h(
+      'div',
+      { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)' } },
+      h('span', { style: { color: 'var(--color-text-sub)', fontSize: 'var(--font-size-small)' } }, 'Размер'),
+      ...options.map((o) => {
+        const active = o.beatsPerBar === beat.beatsPerBar && o.beatDivision === beat.beatDivision
+        return h(
+          'button',
+          {
+            type: 'button',
+            // .dial__meter — тот же бейдж «N/M», что у кольца метронома.
+            className: `dial__meter${active ? ' dial__meter--active' : ''}`,
+            'aria-pressed': String(active),
+            onClick: () => setMeter(o),
+          },
+          `${o.beatsPerBar}/${o.beatDivision}`
+        )
+      })
+    )
   }
 
   // --- кит (звук) ---
@@ -105,7 +139,9 @@ export function mountBeatEditorScreen(
   }
 
   const grid = createBeatGrid({
-    onEdit: ({ steps, tracks }) => updateBeat({ steps, tracks }),
+    // Длина изменилась — размер пересчитывается сам (выбор для кратных 12
+    // сохраняется, пока длина остаётся такой, где он допустим).
+    onEdit: ({ steps, tracks }) => updateBeat({ steps, tracks, ...fitMeter(steps, currentBeat()) }),
     onAddRow: () => {
       showAddRole = !showAddRole
       render()
@@ -238,8 +274,9 @@ export function mountBeatEditorScreen(
     return h('div', { className: 'card', style: { display: 'flex', alignItems: 'center', justifyContent: 'center' } }, bpmEl)
   }
 
+  const aboveGrid = h('div', {})
   const belowGrid = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } })
-  const layout = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } }, grid.el, belowGrid)
+  const layout = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } }, aboveGrid, grid.el, belowGrid)
 
   function render() {
     const beat = currentBeat()
@@ -248,6 +285,14 @@ export function mountBeatEditorScreen(
       return
     }
     if (!layout.isConnected) mount(container, layout)
+    // Бит мог прийти из БД позже открытия экрана (обновили страницу в
+    // редакторе) — отдать его движку при первом появлении.
+    if (!engineSynced) {
+      engineSynced = true
+      syncEngine(beat)
+    }
+    mount(aboveGrid, renderMeterChoice(beat))
+    aboveGrid.hidden = !aboveGrid.firstChild
     grid.update(beat)
     mount(
       belowGrid,
@@ -258,8 +303,6 @@ export function mountBeatEditorScreen(
     )
   }
 
-  const initialBeat = currentBeat()
-  if (initialBeat) syncEngine(initialBeat)
 
   // Играющий шаг подсвечивается напрямую в DOM сетки (grid.setPlayhead), в
   // обход перерисовки — как и в patternScreen.ts. engine.onPlaybackState —

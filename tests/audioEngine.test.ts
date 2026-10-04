@@ -168,3 +168,96 @@ test('паттерн без секций (бит из редактора) кру
     assert.equal(step, (seen[i] + 1) % steps, `шаги должны идти по кругу 0..6 без обрывов, получили: ${seen.join('')}`)
   })
 })
+
+test('шагов на долю — из паттерна (stepsPerBeat): у бита N/M шаг звучит как 1/M доли', async () => {
+  installWebAudioStubs()
+  const engine = createAudioEngine()
+  engine.setBeatsPerBar(4)
+  const steps = 8
+  engine.setSong({
+    ...makeTestSong(),
+    sections: [],
+    // 8 шагов по 4 на долю — бит 2/4: ровно 2 доли
+    pattern: {
+      steps,
+      stepsPerBeat: 4,
+      tracks: [{ id: 'real_kick', name: 'Kick', color: '', sample: '', steps: Array.from({ length: steps }, (_, i) => i === 0) }],
+    },
+  })
+  engine.setBpm(300) // 1 доля = 200мс, шаг = 50мс
+
+  // Какие шаги паттерна пришлись на каждую долю (ключ — такт:доля).
+  const stepsByBeat = new Map<string, Set<number>>()
+  engine.onPlaybackState((s) => {
+    if (!engine.isPlaying) return
+    const key = `${s.bar}:${s.beat}`
+    if (!stepsByBeat.has(key)) stepsByBeat.set(key, new Set())
+    stepsByBeat.get(key)!.add(s.patternStep)
+  })
+  await engine.start()
+  await new Promise((resolve) => setTimeout(resolve, 1000))
+  engine.stop()
+
+  // start() синхронно отдаёт сброс (такт 0, доля 1, шаг 0) до первого
+  // настоящего шага — он попадает в ту же долю 0:1 и не мешает.
+  assert.deepEqual([...(stepsByBeat.get('0:1') ?? [])].sort(), [0, 1, 2, 3], 'первая доля — шаги 0..3')
+  assert.deepEqual([...(stepsByBeat.get('0:2') ?? [])].sort(), [4, 5, 6, 7], 'вторая доля — шаги 4..7')
+  assert.deepEqual([...(stepsByBeat.get('0:3') ?? [])].sort(), [0, 1, 2, 3], 'бит на 2 доли пошёл по кругу')
+})
+
+test('биты в секциях: грув секции по кругу, филл с доли вместо него и обрезается концом секции', async () => {
+  installWebAudioStubs()
+  // Сэмплов в тесте нет — движок играет запасной осциллятор с частотой
+  // инструмента (config.ts): bd 120, sd 220, hh 450. По ней и узнаём, что
+  // прозвучало.
+  const played: { time: number; freq: number }[] = []
+  class RecordingAudioContext extends FakeAudioContext {
+    createOscillator() {
+      const osc = super.createOscillator()
+      return {
+        ...osc,
+        start: (time = 0) => {
+          played.push({ time, freq: osc.frequency.value })
+        },
+      }
+    }
+  }
+  ;(globalThis as any).AudioContext = RecordingAudioContext
+  const nameByFreq: Record<number, string> = { 120: 'bd', 220: 'sd', 450: 'hh' }
+
+  const engine = createAudioEngine()
+  engine.setBeatsPerBar(4)
+  engine.setSong({
+    ...makeTestSong(),
+    // паттерн песни — bd на каждую долю
+    pattern: { steps: 2, tracks: [{ id: 'bd', name: 'BD', color: '', sample: '', steps: [true, false] }] },
+    sections: [
+      {
+        name: 'A',
+        bars: 1,
+        comment: '',
+        intro: false,
+        // грув — hh на каждую долю (бит 1/2)
+        groove: { steps: 2, stepsPerBeat: 2, tracks: [{ id: 'hh', name: 'HH', color: '', sample: '', steps: [true, false] }] },
+        // филл на 2 доли (бит 2/2, sd на каждом шаге) с последней доли — во
+        // второй доле секция уже кончилась, он обрезается
+        fillPatterns: [
+          { at: 3, pattern: { steps: 4, stepsPerBeat: 2, tracks: [{ id: 'sd', name: 'SD', color: '', sample: '', steps: [true, true, true, true] }] } },
+        ],
+      },
+      { name: 'B', bars: 1, comment: '', intro: false },
+    ],
+  })
+  engine.setBpm(600) // 1 доля = 100мс; 2 такта по 4 доли = 0.8с, потом стоп
+
+  await engine.start()
+  await new Promise((resolve) => setTimeout(resolve, 1200))
+  engine.stop()
+
+  const heard = played.sort((a, b) => a.time - b.time).map((p) => nameByFreq[p.freq] ?? `?${p.freq}`)
+  assert.deepEqual(
+    heard,
+    ['hh', 'hh', 'hh', 'sd', 'sd', 'bd', 'bd', 'bd', 'bd'],
+    'доли 1–3 — грув секции A, доля 4 — филл (вторая его доля обрезана), секция B — паттерн песни'
+  )
+})

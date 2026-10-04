@@ -14,7 +14,7 @@
 // довисит до конца (nextNoteTime посчитан по старому bpm), новый темп
 // вступает в силу с СЛЕДУЮЩЕЙ доли — задержка максимум в один интервал
 // между долями на старом темпе. См. tests/audioEngine.test.ts.
-import { Song, PlaybackState } from '../types.ts'
+import { Song, PlaybackState, Pattern } from '../types.ts'
 import { PATTERN_STEPS, CONFIG, instrumentFrequencyMap } from '../config.ts'
 import { createSampleLoader } from './sampleLoader.ts'
 
@@ -34,6 +34,19 @@ const patternHasActiveSteps = (pattern: Song['pattern'] | undefined) =>
   !!pattern?.tracks?.some((track) => track.steps.some(Boolean))
 
 const totalBars = (song: Song) => song.sections.reduce((s, sec) => s + sec.bars, 0)
+
+const stepsPerBeatOf = (pattern: Pattern) => pattern.stepsPerBeat ?? 2
+
+/** Что звучит на доле: паттерн и шаг, с которого он начинается на этой доле. */
+interface SoundSource {
+  pattern: Pattern
+  firstStep: number
+  /** Грув и паттерн песни идут по кругу, филл — один раз. */
+  loop: boolean
+  /** Шаг показывается в событиях (patternStep) только для паттерна песни —
+   * его подсвечивает редактор паттерна и плейхед редактора бита. */
+  isSongPattern: boolean
+}
 
 export interface AudioEngine {
   setSong(song: Song | null): void
@@ -167,6 +180,32 @@ export function createAudioEngine(): AudioEngine {
     osc.stop(time + 0.12)
   }
 
+  // Источник звука на доле секции: филл, покрывающий эту долю (поздний
+  // перекрывает ранний; обрезается концом секции) → бит секции (по кругу от
+  // начала секции) → паттерн песни (по кругу от начала песни, как всегда).
+  // Бит/филл на N/M занимает N долей, шаг — 1/M доли.
+  function soundSourceAt(sectionIdx: number, beatInSection: number, totalBeatsPassed: number): SoundSource | null {
+    const section = sectionIdx >= 0 ? currentSong?.sections[sectionIdx] : undefined
+    if (section) {
+      const sectionBeats = section.bars * beatsPerBar
+      let fill: { at: number; pattern: Pattern } | null = null
+      for (const f of section.fillPatterns ?? []) {
+        const beats = Math.ceil(f.pattern.steps / stepsPerBeatOf(f.pattern))
+        const covers = beatInSection >= f.at && beatInSection < Math.min(f.at + beats, sectionBeats)
+        if (covers && (!fill || f.at > fill.at)) fill = f
+      }
+      if (fill) {
+        return { pattern: fill.pattern, firstStep: (beatInSection - fill.at) * stepsPerBeatOf(fill.pattern), loop: false, isSongPattern: false }
+      }
+      if (section.groove) {
+        return { pattern: section.groove, firstStep: beatInSection * stepsPerBeatOf(section.groove), loop: true, isSongPattern: false }
+      }
+    }
+    const pattern = currentSong?.pattern
+    if (!pattern) return null
+    return { pattern, firstStep: totalBeatsPassed * stepsPerBeatOf(pattern), loop: true, isSongPattern: true }
+  }
+
   function schedule() {
     const ctx = audioContext
     if (!ctx) return
@@ -189,14 +228,15 @@ export function createAudioEngine(): AudioEngine {
       const scheduledTime = nextNoteTime
       const currentBeatValue = beat
       const currentBarValue = bar
-      const pattern = currentSong?.pattern
-      const patternLength = pattern?.steps || PATTERN_STEPS
       const totalBeatsPassed = currentBarValue * beatsPerBar + (currentBeatValue - 1)
-      const usePatternSounds = pattern && patternHasActiveSteps(pattern)
 
       const sectionIdx = sectionRanges.findIndex(
         (r) => currentBarValue >= r.start && currentBarValue <= r.end
       )
+      const beatInSection =
+        sectionIdx >= 0 ? (currentBarValue - sectionRanges[sectionIdx].start) * beatsPerBar + (currentBeatValue - 1) : 0
+      const source = soundSourceAt(sectionIdx, beatInSection, totalBeatsPassed)
+      const usePatternSounds = !!source && patternHasActiveSteps(source.pattern)
       const isLastBarOfSection = sectionIdx >= 0 && currentBarValue === sectionRanges[sectionIdx].end
       const hasNextSection = sectionIdx >= 0 && sectionIdx < (currentSong?.sections.length ?? 0) - 1
       const nextSection = hasNextSection ? currentSong!.sections[sectionIdx + 1] : null
@@ -210,25 +250,31 @@ export function createAudioEngine(): AudioEngine {
         }
       }
 
-      if (usePatternSounds && patternLength > 0) {
-        const subDiv = 2
+      if (usePatternSounds) {
+        const { pattern } = source!
+        const patternLength = pattern.steps || PATTERN_STEPS
+        // Шагов на долю — из паттерна: у бита это M его размера N/M, у
+        // паттерна песни — 2 (восьмые), как было всегда.
+        const subDiv = stepsPerBeatOf(pattern)
         const subDuration = 60 / bpm / subDiv
-        const baseStep = Math.floor(totalBeatsPassed * subDiv)
 
         for (let sub = 0; sub < subDiv; sub++) {
           const subTime = scheduledTime + sub * subDuration
-          const stepIndex = (baseStep + sub) % patternLength
+          const step = source!.firstStep + sub
+          const stepIndex = source!.loop ? step % patternLength : step
 
-          pattern.tracks.forEach((track) => {
-            if (track.steps[stepIndex]) playInstrumentSound(track.id, subTime)
-          })
+          if (stepIndex < patternLength) {
+            pattern.tracks.forEach((track) => {
+              if (track.steps[stepIndex]) playInstrumentSound(track.id, subTime)
+            })
+          }
 
           visualQueue.push({
             time: subTime,
             type: 'beat',
             beat: currentBeatValue,
             bar: currentBarValue,
-            patternStep: stepIndex,
+            patternStep: source!.isSongPattern ? stepIndex : -1,
             nextSectionName,
           })
         }

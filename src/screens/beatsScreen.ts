@@ -1,15 +1,14 @@
-// Экран библиотеки битов/брейков: список (локальный, без Firestore, см.
-// data/beatsLibrary.ts) + создание + добавление чужого бита по коду (разовая
-// передача, см. data/sharedBeatApi.ts). Сам редактор — beatEditorScreen.ts.
+// Экран библиотеки битов/брейков: список + создание. Биты хранятся в
+// аккаунте (users/{uid}/beats, data/userLibrary.ts) — без входа экран
+// показывает карточку «Войти через Google». Сам редактор — beatEditorScreen.ts.
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
+import { accountGate } from '../components/signInCard.ts'
 import { icon } from '../icons.ts'
 import { DEFAULT_KIT_ID } from '../config.ts'
 import { Beat, BeatKind } from '../types.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
-import { fetchSharedBeat } from '../data/sharedBeatApi.ts'
 import { beatBarCount } from '../data/beatsLibrary.ts'
-import { isFirebaseConfigured } from '../data/firebase.ts'
 
 function barsLabel(n: number): string {
   const mod100 = n % 100
@@ -42,10 +41,6 @@ function createDefaultBeat(): Beat {
 }
 
 export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: string) => void): () => void {
-  let joinCode = ''
-  let busy = false
-  let errorMessage: string | null = null
-
   function handleCreate() {
     const beat = createDefaultBeat()
     const state = getState()
@@ -53,34 +48,16 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
     onOpenBeat(beat.id)
   }
 
-  async function handleAddByCode(code: string) {
-    const trimmed = code.trim().toLowerCase()
-    if (!trimmed || busy) return
-    busy = true
-    errorMessage = null
-    render()
-    try {
-      const shared = await fetchSharedBeat(trimmed)
-      if (!shared) {
-        errorMessage = 'Бит с таким кодом не найден.'
-        return
-      }
-      const state = getState()
-      saveBeats([...state.beats, { ...shared, id: `beat_${Date.now()}` }])
-      joinCode = ''
-    } catch (err) {
-      errorMessage = 'Не удалось получить бит. ' + (err instanceof Error ? err.message : String(err))
-    } finally {
-      busy = false
-      render()
-    }
-  }
-
   function kindBadge(kind: BeatKind) {
     return h('span', { className: 'badge' }, kind === 'beat' ? 'Бит' : 'Брейк')
   }
 
   function render() {
+    const gate = accountGate('Войдите — биты хранятся в вашем аккаунте и видны на любом устройстве.')
+    if (gate) {
+      mount(container, gate)
+      return
+    }
     const state = getState()
     mount(
       container,
@@ -103,25 +80,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                   h('span', { className: 'badge' }, barsLabel(beatBarCount(beat)))
                 )
               )
-            ),
-        isFirebaseConfigured
-          ? h(
-              'div',
-              { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' } },
-              h('h3', {}, 'Добавить по коду'),
-              h('p', { style: { color: 'var(--color-text-sub)', fontSize: 'var(--font-size-small)' } },
-                'Если кто-то поделился с вами битом — введите код, который он получил при нажатии «Поделиться».'),
-              h('input', {
-                className: 'input',
-                placeholder: 'например, k7m2qx',
-                value: joinCode,
-                onInput: (e: Event) => (joinCode = (e.target as HTMLInputElement).value),
-                onKeyDown: (e: KeyboardEvent) => e.key === 'Enter' && handleAddByCode(joinCode),
-              }),
-              button('Добавить', { onClick: () => handleAddByCode(joinCode), disabled: busy }),
-              errorMessage ? h('div', { style: { color: 'var(--color-text-danger)' } }, errorMessage) : null
             )
-          : null
       )
     )
   }

@@ -45,6 +45,8 @@
 
   /* Сетка долей секции песни (.bar-grid, screens/songScreen.ts) */
   --color-bar-grid-bar-start: #f3f4f6;
+  /* Доли под филлом из библиотеки битов */
+  --color-bar-grid-fill: #f59e0b;
 }
 
 :root {

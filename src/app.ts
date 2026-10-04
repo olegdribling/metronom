@@ -5,10 +5,10 @@ import { createRouter } from './router.ts'
 import { createAudioEngine } from './engine/audioEngine.ts'
 import { appHeader, HeaderRightAction } from './components/appHeader.ts'
 import { appFooter, RouteKind } from './components/appFooter.ts'
-import { getState, subscribe, patchState, setPlaylistSession } from './state/appState.ts'
-import { openPlaylistSession } from './data/playlistSession.ts'
-import { getKnownPlaylistCodes } from './data/knownPlaylists.ts'
-import { playlistExists } from './data/playlistApi.ts'
+import { getState, subscribe, patchState, setUserLibrary, clearUserLibrary } from './state/appState.ts'
+import { onUserChange } from './data/auth.ts'
+import { openUserLibrary } from './data/userLibrary.ts'
+import { resolveSongForEngine } from './data/resolveBeat.ts'
 import { mountMetronomeScreen } from './screens/metronomeScreen.ts'
 import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
@@ -16,7 +16,7 @@ import { mountPatternScreen } from './screens/patternScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
 import { mountBeatEditorScreen } from './screens/beatEditorScreen.ts'
-import { Song } from './types.ts'
+import { Beat, Song } from './types.ts'
 
 export function startApp(root: HTMLElement): void {
   const engine = createAudioEngine()
@@ -94,33 +94,53 @@ export function startApp(root: HTMLElement): void {
     screenCleanup = fn(mainSlot)
   }
 
-  // Песня, которую сейчас играет движок. Движок получает песню только через
-  // setSong(), а правят её после загрузки — секции (экран песни), паттерн
-  // (редактор паттерна), другие участники плейлиста (Firestore). Без
-  // пересинхронизации ниже движок играл старую версию: новая песня с одной
-  // вводной «1 2 3 4» крутила только её, хотя секции уже добавлены.
+  // Песня, которую должен играть движок (engineSongId), и её версия, уже
+  // отданная ему (engineSong). Движок получает песню только через setSong(),
+  // а правят её после загрузки — секции (экран песни), паттерн (редактор
+  // паттерна), снимки Firestore. Без пересинхронизации ниже движок играл
+  // старую версию: новая песня с одной вводной «1 2 3 4» крутила только её,
+  // хотя секции уже добавлены. Id отдельно от версии — чтобы песня дошла до
+  // движка и тогда, когда /song/:id открыли раньше, чем песни пришли из БД
+  // (обновили страницу на экране песни).
+  // Секции ссылаются на биты библиотеки (beatId/fills), поэтому движку
+  // отдаётся копия песни с подставленными паттернами битов
+  // (resolveSongForEngine) — и пересобирается, когда меняются либо песня,
+  // либо биты (правка бита в «Битах» сразу слышна в песне).
+  let engineSongId: number | null = null
   let engineSong: Song | null = null
+  let engineBeats: Beat[] | null = null
+
+  function syncEngineSong() {
+    if (engineSongId === null) return
+    const state = getState()
+    const fresh = state.songs.find((s) => s.id === engineSongId)
+    if (!fresh || (fresh === engineSong && state.beats === engineBeats)) return
+    const firstLoad = !engineSong
+    // Сначала запомнить, что отдано движку, и только потом patchState: эта
+    // функция сама подписчик состояния — иначе patchState вызвал бы её
+    // снова с ещё пустым engineSong, и так до переполнения стека.
+    engineSong = fresh
+    engineBeats = state.beats
+    engine.setSong(resolveSongForEngine(fresh, state.beats))
+    // Темп — только при первой загрузке песни: дальше его меняют отдельно
+    // (метроном/футер), правки песни его не перебивают.
+    if (firstLoad) {
+      engine.setBpm(fresh.bpm)
+      patchState({ bpm: fresh.bpm })
+    }
+  }
 
   function loadSongIntoEngine(songId: number) {
-    const song = getState().songs.find((s) => s.id === songId)
-    if (!song) return
-    patchState({ currentSongId: songId, bpm: song.bpm })
-    engineSong = song
-    engine.setSong(song)
-    engine.setBpm(song.bpm)
+    engineSongId = songId
+    engineSong = null
+    engineBeats = null
+    patchState({ currentSongId: songId })
+    syncEngineSong()
   }
 
   // Каждое сохранение песни — новый объект (saveSongs/снимок Firestore),
-  // поэтому сравнение по ссылке и есть «песню изменили». Темп не трогаем —
-  // его меняют отдельно (метроном/футер), не перебиваем.
-  subscribe((state) => {
-    if (!engineSong) return
-    const fresh = state.songs.find((s) => s.id === engineSong!.id)
-    if (fresh && fresh !== engineSong) {
-      engineSong = fresh
-      engine.setSong(fresh)
-    }
-  })
+  // поэтому сравнение по ссылке и есть «песню изменили».
+  subscribe(syncEngineSong)
 
   router.on('/metronome', () => {
     setScreen('metronome', () => 'Metronom')
@@ -175,6 +195,7 @@ export function startApp(root: HTMLElement): void {
     let requestSave: () => void = () => {}
     // Движок с этого момента играет бит (редактор сам грузит его через
     // setSong) — правки песни больше не должны его перебивать.
+    engineSongId = null
     engineSong = null
     setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
@@ -194,20 +215,20 @@ export function startApp(root: HTMLElement): void {
 
   router.notFoundHandler(() => router.navigate('/metronome'))
 
-  // Восстановить последний открытый плейлист, если код известен и ещё
-  // существует. Если Firebase не настроен или устройство офлайн — тихо
-  // остаёмся на экране "создать/ввести код", ничего не ломаем.
-  void (async () => {
-    const lastCode = getKnownPlaylistCodes()[0]
-    if (!lastCode) return
-    try {
-      if (await playlistExists(lastCode)) {
-        setPlaylistSession(lastCode, openPlaylistSession(lastCode))
-      }
-    } catch {
-      // офлайн / Firebase не настроен — не критично для старта приложения
-    }
-  })()
+  // Песни, плейлисты и биты — в аккаунте (data/userLibrary.ts): вошёл —
+  // открываем его библиотеку (последний плейлист откроется сам), вышел —
+  // закрываем. Firebase помнит вход между запусками, так что при обычном
+  // старте пользователь сразу видит своё.
+  onUserChange((user) => {
+    if (user) setUserLibrary(user, openUserLibrary(user.uid))
+    else clearUserLibrary()
+    patchState({ authReady: true })
+  })
+
+  // Остатки хранения до аккаунтов: биты в localStorage и список кодов
+  // плейлистов. Данные были тестовые — по решению пользователя не переносим.
+  localStorage.removeItem('metronom_beats')
+  localStorage.removeItem('metronom_known_playlists')
 
   router.resolve()
 }

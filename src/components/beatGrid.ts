@@ -211,25 +211,20 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
 
   function buildColumn(c: number): HTMLElement {
     const b = beat!
-    const perBar = b.beatsPerBar * b.beatDivision
     const isTemplate = c >= b.steps
-    const posInBar = c % perBar
-    // Номер такта — над серединой такта: при чётной длине такта на границе
-    // двух средних столбцов, при нечётной — по центру среднего.
-    const labelEdge = perBar % 2 === 0 && posInBar === perBar / 2
-    const labelMid = perBar % 2 === 1 && posInBar === Math.floor(perBar / 2)
+    // Весь бит — один такт (размер по длине, data/beatMeter.ts), поэтому
+    // номеров тактов над лентой нет, а линия такта отмечает только конец
+    // бита — границу с призрачными столбцами.
     const col = h('div', {
       className:
         'beat-grid__col' +
         (isTemplate ? ' beat-grid__col--template' : '') +
-        (c > 0 && posInBar === 0 ? ' beat-grid__col--bar-start' : '') +
-        (labelEdge ? ' beat-grid__col--label-edge' : labelMid ? ' beat-grid__col--label-mid' : '') +
+        (c > 0 && c % b.steps === 0 ? ' beat-grid__col--bar-start' : '') +
         (c === active.column ? ' beat-grid__col--active' : '') +
         (c === playhead ? ' beat-grid__col--playing' : ''),
-      dataset: labelEdge || labelMid ? { bar: String(Math.floor(c / perBar) + 1) } : undefined,
     })
     // Чередующаяся заливка долей (группа = beatDivision шагов) — наша, у
-    // референса её нет; границы тактов — линиями, как у него.
+    // референса её нет.
     const altGroup = Math.floor(c / b.beatDivision) % 2 === 1
     b.tracks.forEach((track, r) => {
       const on = !isTemplate && !!track.steps[c]

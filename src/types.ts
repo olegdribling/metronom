@@ -17,6 +17,10 @@ export interface PatternTrack {
 
 export interface Pattern {
   steps: number
+  /** Сколько шагов звучит на одну долю. Нет — 2 (восьмые), как у паттерна
+   * песни (редактор паттерна). У бита — beat.beatDivision (шаг = 1/M доли,
+   * data/beatMeter.ts). */
+  stepsPerBeat?: number
   tracks: PatternTrack[]
 }
 
@@ -50,8 +54,10 @@ export interface Beat {
   /** Долей в такте — как «Metrum» у кольца метронома (metronomeScreen.ts).
    * По умолчанию 1 — одна доля на такт. */
   beatsPerBar: number
-  /** Ударов на долю — как «деление доли» у кольца метронома. По умолчанию
-   * 4 — итоговый размер по умолчанию 1/4 (один такт = 4 удара). */
+  /** Ударов на долю (M) — как «деление доли» у кольца метронома. Вместе с
+   * beatsPerBar (N) — размер бита N/M, определяется по числу столбцов
+   * автоматически (data/beatMeter.ts), весь бит — один такт. В песне бит
+   * занимает N долей, шаг звучит как 1/M доли. */
   beatDivision: number
   /** id кита из DRUM_KITS (config.ts) — свой на каждый бит, не общий на
    * приложение, как и steps/beatsPerBar/beatDivision. */
@@ -59,11 +65,28 @@ export interface Beat {
   tracks: BeatTrack[]
 }
 
+/** Филл в секции: бит из библиотеки, звучащий с доли `at` (номер доли от
+ * начала секции, с 0) на свои N долей вместо грува; обрезается концом
+ * секции. */
+export interface SectionFill {
+  at: number
+  beatId: string
+}
+
 export interface Section {
   name: string
   bars: number
   comment: string
   intro: boolean
+  /** Бит из библиотеки — грув на всю секцию вместо паттерна песни (идёт по
+   * кругу от начала секции). Нет — играет паттерн песни. */
+  beatId?: string
+  fills?: SectionFill[]
+  /** Только в копии песни для движка (resolveSongForEngine,
+   * data/resolveBeat.ts) — разрешённые паттерны битов. В БД не пишутся:
+   * движок про Beat не знает, а в песне хранятся только ссылки. */
+  groove?: Pattern
+  fillPatterns?: { at: number; pattern: Pattern }[]
 }
 
 export interface Song {
@@ -74,12 +97,13 @@ export interface Song {
   pattern: Pattern
 }
 
-// Плейлист — единица совместного доступа: один shareable-код, внутри —
-// список песен. Живёт в Firestore как playlists/{code}.
+// Плейлист — список песен в аккаунте пользователя:
+// users/{uid}/playlists/{id} (data/userLibrary.ts). Общего доступа по коду
+// пока нет — отложено отдельной задачей.
 export interface Playlist {
-  code: string
+  id: string
+  name: string
   songs: Song[]
-  updatedAt: number
 }
 
 export interface PlaybackState {
@@ -101,4 +125,5 @@ export interface SectionFormData {
   name: string
   bars: number
   comment: string
+  beatId?: string
 }

@@ -15,7 +15,7 @@
    .dial__dot          — точка на кольце (--large доля, --small деление, --filled)
    .dial__center       — центр кольца (BPM + размер такта)
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
-   .dial__meter        — бейдж «долей/деление» (тап — редактировать)
+   .dial__meter        — бейдж «долей/деление» (тап — редактировать); --active — выбранный
    .step               — клетка шага паттерна
    .beat-grid          — сетка редактора бита (components/beatGrid.ts): строки-
                          иконки, лента столбцов, выделение, тулбар, вставка
@@ -23,7 +23,9 @@
    .switch             — переключатель вкл/выкл (--on — включён)
    .bar-grid           — сетка долей секции песни: квадратик на долю, прошедшие
                          закрашены (--filled), текущая (--current), первая доля
-                         такта (--bar-start) — как в v1 (screens/songScreen.ts)
+                         такта (--bar-start) — как в v1 (screens/songScreen.ts);
+                         доли под филлом (--fill, --fill-start), выбранная для
+                         филла (--picked); квадратик — кнопка выбора филла
    .badge              — маленький текстовый бейдж (например, "4 такта")
    .app-header         — шапка экрана
    .app-footer         — нижняя панель транспорта/навигации
@@ -217,6 +219,13 @@
   cursor: pointer;
   min-height: var(--touch-target-min);
 }
+/* Выбранный вариант размера (редактор бита, длина кратна 12) — после
+   базового класса, иначе он перебьёт цвета (одна специфичность). */
+.dial__meter--active {
+  color: var(--color-text-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
 
 .step {
   height: 40px;
@@ -230,7 +239,7 @@
 
 /* Сетка редактора бита — components/beatGrid.ts. Геометрия как у референса
    (realdrummetronome.com/editor): столбец 44px (клетка 40 + поля по 2),
-   строка 32px (клетка 30 + поля по 1), сверху 30px под номера тактов.
+   строка 32px (клетка 30 + поля по 1), сверху 30px — место под тулбар выделения.
    Те же числа — COL_W/ROW_H в beatGrid.ts, менять вместе.
    Ширину ленты (--beat-grid-viewport-w, целое число столбцов) и число строк
    (--beat-grid-rows) выставляет beatGrid.ts. */
@@ -313,20 +322,7 @@
 }
 /* Призрачные столбцы за концом бита — тап по ним удлиняет бит. */
 .beat-grid__col--template { opacity: 0.2; }
-/* Номер такта — над серединой такта (см. buildColumn в beatGrid.ts). */
-.beat-grid__col[data-bar]::before {
-  content: attr(data-bar);
-  position: absolute;
-  top: -30px;
-  line-height: 30px;
-  font-size: var(--font-size-small);
-  color: var(--color-text-sub);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.beat-grid__col--label-edge::before { left: 0; }
-.beat-grid__col--label-mid::before { left: 50%; }
-/* Граница такта — вертикальная линия по левому краю первого столбца такта. */
+/* Конец бита — вертикальная линия по левому краю первого призрачного столбца. */
 .beat-grid__col--bar-start::after {
   content: '';
   position: absolute;
@@ -511,9 +507,11 @@
 }
 .bar-grid__cell {
   height: 20px;
+  padding: 0;
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
+  cursor: pointer;
   transition: background-color 0.1s ease, border-color 0.1s ease;
 }
 .bar-grid__cell--bar-start { background: var(--color-bar-grid-bar-start); }
@@ -525,6 +523,11 @@
   background: var(--color-accent);
   border-color: var(--color-accent);
 }
+/* Отметки филла — тенью, а не фоном: фон занят закраской игры (--filled,
+   --current), отметка должна быть видна и поверх неё. */
+.bar-grid__cell--fill { box-shadow: inset 0 -4px 0 var(--color-bar-grid-fill); }
+.bar-grid__cell--fill-start { box-shadow: inset 0 -4px 0 var(--color-bar-grid-fill), inset 3px 0 0 var(--color-bar-grid-fill); }
+.bar-grid__cell--picked { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
 
 .switch {
   position: relative;

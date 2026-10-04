@@ -7,11 +7,16 @@
 // экран сам доезжает до неё. Это горячий путь: обновляется напрямую в DOM
 // из engine.onPlaybackState, в обход перерисовки экрана (как подсветка доли
 // в metronomeScreen.ts и шага в patternScreen.ts).
+//
+// Биты из библиотеки в секциях: в форме секции — «Бит секции» (грув на всю
+// секцию вместо паттерна песни), тап по квадратику-доле — филл с этой доли
+// (бит на N/M занимает N долей, доли под ним отмечены). В песне хранятся
+// только ссылки (beatId), паттерны подставляет app.ts для движка.
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { icon } from '../icons.ts'
 import { CONFIG, SECTION_TYPES } from '../config.ts'
-import { PlaybackState, Section, SectionFormData, Song } from '../types.ts'
+import { Beat, PlaybackState, Section, SectionFill, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, saveSongs } from '../state/appState.ts'
 
@@ -36,9 +41,45 @@ export function mountSongScreen(
   let shownBeat = -1
   let shownSection = -1
   let lastPlayback: PlaybackState = getState().playbackState
+  // Открытый выбор филла: секция и доля (от начала секции, с 0).
+  let fillPicker: { section: number; at: number } | null = null
 
   function currentSong(): Song | undefined {
     return getState().songs.find((s) => s.id === songId)
+  }
+
+  function beatById(id: string | undefined): Beat | undefined {
+    return id ? getState().beats.find((b) => b.id === id) : undefined
+  }
+
+  // Бит на N/M занимает в песне N долей (data/beatMeter.ts).
+  function fillLength(fill: SectionFill): number {
+    return beatById(fill.beatId)?.beatsPerBar ?? 1
+  }
+
+  function beatLabel(id: string | undefined): string {
+    const beat = beatById(id)
+    return beat ? `«${beat.name}»` : 'бит удалён'
+  }
+
+  function updateSection(index: number, patch: Partial<Section>) {
+    const song = currentSong()
+    if (!song) return
+    updateSong({ sections: song.sections.map((sec, i) => (i === index ? { ...sec, ...patch } : sec)) })
+  }
+
+  function assignFill(index: number, at: number, beatId: string) {
+    const fills = (currentSong()?.sections[index]?.fills ?? []).filter((f) => f.at !== at)
+    updateSection(index, { fills: [...fills, { at, beatId }].sort((a, b) => a.at - b.at) })
+    fillPicker = null
+    render()
+  }
+
+  function removeFill(index: number, at: number) {
+    const fills = (currentSong()?.sections[index]?.fills ?? []).filter((f) => f.at !== at)
+    updateSection(index, { fills })
+    fillPicker = null
+    render()
   }
 
   function updateSong(patch: Partial<Song>) {
@@ -59,6 +100,7 @@ export function mountSongScreen(
   function removeSection(index: number) {
     const song = currentSong()
     if (!song || song.sections[index]?.intro) return
+    fillPicker = null
     updateSong({ sections: song.sections.filter((_, i) => i !== index) })
     render()
   }
@@ -68,7 +110,7 @@ export function mountSongScreen(
     const sec = song?.sections[index]
     if (!sec) return
     editingIndex = index
-    editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '' }
+    editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '', beatId: sec.beatId }
     showAddForm = false
     render()
   }
@@ -76,8 +118,11 @@ export function mountSongScreen(
   function saveEdit() {
     const song = currentSong()
     if (!song || editingIndex == null) return
+    const bars = Math.max(1, editData.bars)
+    const sectionBeats = bars * getState().beatsPerBar
     const sections = song.sections.map((sec, i) =>
-      i === editingIndex ? { ...sec, ...editData, bars: Math.max(1, editData.bars) } : sec
+      // Секцию укоротили — филлы, начинавшиеся за её новым концом, убираем.
+      i === editingIndex ? { ...sec, ...editData, bars, fills: sec.fills?.filter((f) => f.at < sectionBeats) } : sec
     )
     updateSong({ sections })
     editingIndex = null
@@ -90,6 +135,7 @@ export function mountSongScreen(
     const sections = [...song.sections]
     const [moved] = sections.splice(from, 1)
     sections.splice(to, 0, moved)
+    fillPicker = null
     updateSong({ sections })
     render()
   }
@@ -133,6 +179,25 @@ export function mountSongScreen(
         onInput: (e: Event) => onFieldChange({ comment: (e.target as HTMLInputElement).value.slice(0, CONFIG.MAX_COMMENT_LENGTH) }),
       }),
       h(
+        'label',
+        { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' } },
+        h('span', { style: { fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } }, 'Бит секции'),
+        h(
+          'select',
+          {
+            className: 'input',
+            onChange: (e: Event) => onFieldChange({ beatId: (e.target as HTMLSelectElement).value || undefined }),
+          },
+          h('option', { value: '', selected: !data.beatId }, 'Паттерн песни'),
+          ...getState().beats.map((b) =>
+            h('option', { value: b.id, selected: b.id === data.beatId }, `${b.name} · ${b.beatsPerBar}/${b.beatDivision}`)
+          ),
+          // Назначенный бит удалён из библиотеки — показать это, а не молча
+          // переключить на «Паттерн песни».
+          data.beatId && !beatById(data.beatId) ? h('option', { value: data.beatId, selected: true }, 'бит удалён') : null
+        )
+      ),
+      h(
         'div',
         { style: { display: 'flex', gap: 'var(--space-3)' } },
         button('Сохранить', { variant: 'accent', iconName: 'floppy-disk', onClick: onSubmit }),
@@ -148,19 +213,79 @@ export function mountSongScreen(
     return beatsPerBar * Math.max(1, Math.floor(8 / beatsPerBar))
   }
 
-  function barGrid(sec: Section, firstBar: number) {
+  function barGrid(sec: Section, index: number, firstBar: number) {
     const beatsPerBar = getState().beatsPerBar
+    const sectionBeats = sec.bars * beatsPerBar
     const grid = h('div', { className: 'bar-grid' })
     grid.style.setProperty('--bar-grid-columns', String(barGridColumns(beatsPerBar)))
-    for (let i = 0; i < sec.bars * beatsPerBar; i++) {
-      const cell = h('div', {
-        className: `bar-grid__cell${i % beatsPerBar === 0 ? ' bar-grid__cell--bar-start' : ''}`,
+    const fills = sec.fills ?? []
+    for (let i = 0; i < sectionBeats; i++) {
+      const underFill = fills.some((f) => i >= f.at && i < Math.min(f.at + fillLength(f), sectionBeats))
+      const cell = h('button', {
+        type: 'button',
+        className:
+          'bar-grid__cell' +
+          (i % beatsPerBar === 0 ? ' bar-grid__cell--bar-start' : '') +
+          (underFill ? ' bar-grid__cell--fill' : '') +
+          (fills.some((f) => f.at === i) ? ' bar-grid__cell--fill-start' : '') +
+          (fillPicker?.section === index && fillPicker.at === i ? ' bar-grid__cell--picked' : ''),
+        'aria-label': `Доля ${i + 1} — филл`,
         dataset: { beat: String(firstBar * beatsPerBar + i) },
+        onClick: () => {
+          const same = fillPicker?.section === index && fillPicker.at === i
+          fillPicker = same ? null : { section: index, at: i }
+          render()
+        },
       })
       beatCells.push(cell)
       grid.append(cell)
     }
     return grid
+  }
+
+  // Выбор филла для доли: список битов библиотеки (имя, размер, сколько
+  // долей займёт) + «Убрать», если с этой доли (или поверх неё) уже стоит филл.
+  function renderFillPicker(sec: Section, index: number, at: number): HTMLElement {
+    const fills = sec.fills ?? []
+    const startsHere = fills.find((f) => f.at === at)
+    const covering = startsHere ?? fills.find((f) => at > f.at && at < f.at + fillLength(f))
+    const beats = getState().beats
+    return h(
+      'div',
+      { className: 'card', style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)', background: 'var(--color-bg)' } },
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)' } },
+        h('span', { style: { flex: '1', fontWeight: 'var(--font-weight-bold)' } }, `Филл с доли ${at + 1}`),
+        iconButton('x', { onClick: () => { fillPicker = null; render() }, ariaLabel: 'Закрыть' })
+      ),
+      covering
+        ? h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)' } },
+            h('span', { style: { flex: '1', fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } },
+              covering === startsHere ? `Сейчас: ${beatLabel(covering.beatId)}` : `Доля под филлом ${beatLabel(covering.beatId)} с доли ${covering.at + 1}`),
+            button('Убрать филл', { variant: 'danger', onClick: () => removeFill(index, covering.at) })
+          )
+        : null,
+      beats.length === 0
+        ? h('p', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-small)' } }, 'В библиотеке пока нет битов — создайте их в «Битах».')
+        : h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
+            ...beats.map((b) =>
+              h(
+                'button',
+                { type: 'button', className: 'list-row', onClick: () => assignFill(index, at, b.id) },
+                icon('drum'),
+                h('span', { style: { flex: '1', textAlign: 'left' } }, b.name),
+                h('span', { className: 'badge' }, `${b.beatsPerBar}/${b.beatDivision}`),
+                h('span', { className: 'badge' }, `${b.beatsPerBar} дол.`),
+                startsHere?.beatId === b.id ? icon('check-circle') : null
+              )
+            )
+          )
+    )
   }
 
   function sectionCard(sec: Section, index: number, firstBar: number) {
@@ -195,7 +320,16 @@ export function mountSongScreen(
             )
       ),
       sec.comment ? h('div', { style: { marginTop: 'var(--space-2)', fontWeight: 'var(--font-weight-bold)' } }, sec.comment) : null,
-      barGrid(sec, firstBar),
+      sec.beatId
+        ? h('div', { style: { marginTop: 'var(--space-2)', fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } },
+            `Бит: ${beatLabel(sec.beatId)}`)
+        : null,
+      barGrid(sec, index, firstBar),
+      ...(sec.fills ?? []).map((f) =>
+        h('div', { style: { marginTop: 'var(--space-1)', fontSize: 'var(--font-size-small)', color: 'var(--color-text-sub)' } },
+          `Филл ${beatLabel(f.beatId)} с доли ${f.at + 1}`)
+      ),
+      fillPicker?.section === index ? renderFillPicker(sec, index, fillPicker.at) : null,
       isEditing
         ? sectionForm(
             editData,
