@@ -2,3 +2,14 @@ RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.html [L]
+
+# Файлы, по которым PWA узнаёт о новой версии, — без кэша. CDN Hostinger
+# по умолчанию держит .js неделю: однажды он закэшировал старый sw.js за
+# минуту до конца деплоя, и телефоны неделю видели прежнюю версию. Остальное
+# в assets/ — с хэшем в имени, кэшировать можно сколько угодно.
+<IfModule mod_headers.c>
+  <FilesMatch "^(sw\.js|registerSW\.js|index\.html|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header unset Expires
+  </FilesMatch>
+</IfModule>
