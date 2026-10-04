@@ -6,7 +6,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAudioEngine } from '../src/engine/audioEngine.ts'
-import { Pattern, Section, Song } from '../src/types.ts'
+import { EngineSong, Pattern, Section } from '../src/types.ts'
 import { installFakeAudio, settle } from './helpers/fakeAudio.ts'
 
 console.warn = () => {} // «не удалось загрузить сэмпл» — в тестах без сэмплов это норма
@@ -20,21 +20,20 @@ function section(name: string, bars: number, extra: Partial<Section> = {}): Sect
   return { id: name, name, bars, comment: '', intro: false, ...extra }
 }
 
-function makeSong(extra: Partial<Song> = {}): Song {
+// Песня, как её получает движок (data/resolveBeat.ts): секции и паттерн
+// песни, уже разрешённые в сэмплы. Темп и размер движку задают отдельно.
+function makeSong(extra: Partial<EngineSong> = {}): EngineSong {
   return {
-    id: 1,
-    name: 'Тестовая песня',
-    bpm: 600,
-    beatsPerBar: 4,
-    beatDivision: 1,
     sections: [section('VERSE', 1)], // не intro → не зацикливается
-    pattern: { steps: 16, tracks: [] },
+    pattern: { steps: 16, stepsPerBeat: 2, tracks: [] },
     ...extra,
   }
 }
 
+// Дорожки — id инструментов кита (config.ts, KIT_INSTRUMENTS): сэмплы
+// BD/SN/HH.wav; без сэмплов — запасной осциллятор с частотой роли.
 const track = (id: string, steps: boolean[]) => ({ id, name: id, color: '', sample: '', steps })
-const pattern = (id: string, steps: boolean[], stepsPerBeat?: number): Pattern => ({ steps: steps.length, stepsPerBeat, tracks: [track(id, steps)] })
+const pattern = (id: string, steps: boolean[], stepsPerBeat = 2): Pattern => ({ steps: steps.length, stepsPerBeat, tracks: [track(id, steps)] })
 
 function setup(t: Parameters<typeof installFakeAudio>[0], opts: Parameters<typeof installFakeAudio>[1] = {}) {
   const audio = installFakeAudio(t, opts)
@@ -141,14 +140,14 @@ test('биты в секциях: грув секции по кругу, фил�
   engine.setSong(
     makeSong({
       // паттерн песни — bd на каждую долю
-      pattern: pattern('bd', [true, false]),
+      pattern: pattern('real_kick', [true, false]),
       sections: [
         section('A', 1, {
           // грув — hh на каждую долю (бит 1/2)
-          groove: pattern('hh', [true, false], 2),
+          groove: pattern('real_hihat', [true, false], 2),
           // филл на 2 доли (бит 2/2, sd на каждом шаге) с последней доли —
           // во второй доле секция уже кончилась, он обрезается
-          fillPatterns: [{ at: 3, pattern: pattern('sd', [true, true, true, true], 2) }],
+          fillPatterns: [{ at: 3, pattern: pattern('real_snare', [true, true, true, true], 2) }],
         }),
         section('B', 1),
       ],
@@ -171,12 +170,12 @@ test('пустой бит или филл секции — пауза, пуст�
     makeSong({
       sections: [
         section('A', 1, {
-          groove: pattern('hh', [true, false], 2),
+          groove: pattern('real_hihat', [true, false], 2),
           // филл без единой ноты на долю 2 — пауза (решение пользователя)
           fillPatterns: [{ at: 1, pattern: pattern('real_kick', [false, false, false, false], 4) }],
         }),
         // пустой грув на всю секцию — тоже пауза
-        section('B', 1, { groove: pattern('hh', [false, false], 2) }),
+        section('B', 1, { groove: pattern('real_hihat', [false, false], 2) }),
         // без грува — паттерн песни, он пустой — щелчок
         section('C', 1),
       ],
@@ -275,7 +274,7 @@ test('Play доступен для щелчка сразу, для паттер�
   const { engine } = setup(t, { samples: true })
   assert.equal(engine.samplesLoaded, false)
   assert.equal(engine.canStart, true, 'щелчок синтезируется — сэмплы не нужны')
-  engine.setSong(makeSong({ pattern: pattern('bd', [true, false]) }))
+  engine.setSong(makeSong({ pattern: pattern('real_kick', [true, false]) }))
   assert.equal(engine.canStart, false, 'паттерну нужны сэмплы')
   engine.setSong(makeSong())
   engine.setVoiceCount(true)

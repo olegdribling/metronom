@@ -24,14 +24,6 @@ export const DEFAULT_METER = { beatsPerBar: 4, beatDivision: 4 } as const
 
 export const SAMPLES_BASE = 'sound/Real Drum Kit'
 
-export const PATTERN_INSTRUMENTS = [
-  { id: 'bd', label: 'BD', color: '#fb923c', freq: 120, sample: `${SAMPLES_BASE}/BD.wav` },
-  { id: 'sd', label: 'SD', color: '#facc15', freq: 220, sample: `${SAMPLES_BASE}/SN.wav` },
-  { id: 'hh', label: 'HH', color: '#60a5fa', freq: 450, sample: `${SAMPLES_BASE}/HH.wav` },
-]
-
-export const PATTERN_STEPS = 16
-
 // Роли барабана для библиотеки битов/брейков (screens/beatsScreen.ts,
 // beatEditorScreen.ts) — фиксированный набор, звук на роль даёт «кит»
 // (DRUM_KITS), а не хардкод сэмпла на дорожку. Так позже можно добавить
@@ -142,7 +134,7 @@ export const SECTION_TYPES = [
 // ВАЖНО: при добавлении новой группы сэмплов — добавить и сюда (иначе
 // sampleLoader их не загрузит), и в globPatterns в vite.config.ts (иначе
 // не попадут в офлайн-прекеш).
-export const ALL_INSTRUMENTS = [...PATTERN_INSTRUMENTS, ...KIT_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES]
+export const ALL_INSTRUMENTS = [...KIT_INSTRUMENTS, ...VOICE_SAMPLES, ...SECTION_VOICE_SAMPLES]
 
 export const instrumentMetaById: Record<string, { id: string; sample?: string }> =
   ALL_INSTRUMENTS.reduce((acc, inst) => {
@@ -150,7 +142,10 @@ export const instrumentMetaById: Record<string, { id: string; sample?: string }>
     return acc
   }, {} as Record<string, { id: string; sample?: string }>)
 
-export const instrumentFrequencyMap: Record<string, number> = PATTERN_INSTRUMENTS.reduce((acc, inst) => {
-  acc[inst.id] = inst.freq
-  return acc
-}, {} as Record<string, number>)
+// Частота запасного осциллятора, если сэмпл роли не загрузился (нет сети) —
+// по роли, чтобы бочку от малого и хэта было отличить на слух.
+const ROLE_FALLBACK_FREQ: Partial<Record<DrumRole, number>> = { kick: 120, snare: 220, hihat: 450 }
+
+export const instrumentFrequencyMap: Record<string, number> = Object.fromEntries(
+  DRUM_KITS.flatMap((kit) => DRUM_ROLES.filter((role) => ROLE_FALLBACK_FREQ[role]).map((role) => [`${kit.id}_${role}`, ROLE_FALLBACK_FREQ[role]!]))
+)

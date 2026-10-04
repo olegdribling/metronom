@@ -1,4 +1,5 @@
-// Редактор одного бита/брейка. Сама сетка и всё её поведение (тап, выделение
+// Редактор бита — один на весь сервис (решение пользователя): бит/брейк из
+// библиотеки «Биты» и паттерн песни (BeatEditorTarget ниже). Сама сетка и всё её поведение (тап, выделение
 // прямоугольником, копии, вставка, заливка, добавление/удаление шагов и
 // строк) — components/beatGrid.ts, повторяет редактор референса
 // (realdrummetronome.com/editor). Здесь — всё вокруг сетки: кит, BPM,
@@ -13,10 +14,10 @@
 //
 // Название не редактируется вживую — только через «Сохранить» (запрашивает
 // имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
-// Своей кнопки плей в редакторе нет — играть через общий транспорт в
-// футере: на этой странице он играет бит (app.ts берёт его из состояния —
-// каждая правка сразу слышна) в темпе самого бита (beat.bpm, свой у
-// каждого бита).
+// У паттерна песни имени нет — нет и «Сохранить». Своей кнопки плей в
+// редакторе нет — играть через общий транспорт в футере: на этой странице он
+// играет бит по кругу (app.ts берёт его из состояния — каждая правка сразу
+// слышна) в его темпе: у бита свой (beat.bpm), у паттерна — темп песни.
 import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { createBeatGrid } from '../components/beatGrid.ts'
@@ -24,32 +25,82 @@ import { accountGate } from '../components/signInCard.ts'
 import { createTempoField } from '../components/tempoControls.ts'
 import { icon } from '../icons.ts'
 import { CONFIG, DRUM_ROLES, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
-import { Beat, DrumRole } from '../types.ts'
+import { Beat, DrumRole, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats } from '../state/appState.ts'
+import { getState, subscribe, saveBeats, saveSongs } from '../state/appState.ts'
 import { clampBpm } from '../data/songs.ts'
 import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
 
+// Что правит редактор: бит из библиотеки или паттерн песни (бит внутри
+// песни, Song.pattern). Редактор на весь сервис один (решение
+// пользователя) — разница только здесь.
+export interface BeatEditorTarget {
+  get(): Beat | undefined
+  save(beat: Beat): void
+  /** Данные уже пришли — до этого «Загрузка…», а не «не найден». */
+  loaded(): boolean
+  notFoundText: string
+  gateText: string
+  tempo: { get(): number; set(bpm: number): void }
+}
+
+// Бит из библиотеки «Биты»: свой темп, название — через «Сохранить».
+export function libraryBeatTarget(beatId: string): BeatEditorTarget {
+  const get = () => getState().beats.find((b) => b.id === beatId)
+  const save = (beat: Beat) => saveBeats(getState().beats.map((b) => (b.id === beatId ? beat : b)))
+  return {
+    get,
+    save,
+    loaded: () => getState().beatsLoaded,
+    notFoundText: 'Бит не найден.',
+    gateText: 'Войдите — биты хранятся в вашем аккаунте и видны на любом устройстве.',
+    tempo: {
+      get: () => get()?.bpm ?? CONFIG.DEFAULT_BPM,
+      set: (bpm) => {
+        const beat = get()
+        if (beat) save({ ...beat, bpm: clampBpm(bpm) })
+      },
+    },
+  }
+}
+
+// Паттерн песни: темп — песни (правка меняет темп песни), имени нет.
+export function songPatternTarget(songId: number): BeatEditorTarget {
+  const song = () => getState().songs.find((s) => s.id === songId)
+  const update = (patch: Partial<Song>) => saveSongs(getState().songs.map((s) => (s.id === songId ? { ...s, ...patch } : s)))
+  return {
+    get: () => song()?.pattern,
+    save: (pattern) => update({ pattern }),
+    loaded: () => getState().songsLoaded,
+    notFoundText: 'Песня не найдена.',
+    gateText: 'Войдите — песни и плейлисты хранятся в вашем аккаунте и видны на любом устройстве.',
+    tempo: {
+      get: () => song()?.bpm ?? CONFIG.DEFAULT_BPM,
+      set: (bpm) => update({ bpm: clampBpm(bpm) }),
+    },
+  }
+}
+
 export function mountBeatEditorScreen(
   container: HTMLElement,
-  beatId: string,
+  target: BeatEditorTarget,
   engine: AudioEngine,
-  onDone: () => void,
-  onRegisterSave: (fn: () => void) => void
+  /** «Сохранить» с названием — только у бита библиотеки; у паттерна песни
+   * имени нет, дискеты в шапке тоже (app.ts). */
+  saving: { onDone: () => void; onRegisterSave: (fn: () => void) => void } | null
 ): () => void {
   let showAddRole = false
   let showSaveDialog = false
   let nameDraft = ''
   let showKitPicker = false
 
-  function currentBeat(): Beat | undefined {
-    return getState().beats.find((b) => b.id === beatId)
-  }
+  const currentBeat = () => target.get()
 
-  // saveBeats перерисует экран по подписке, а app.ts отдаст новую версию
-  // бита движку.
+  // Сохранение перерисует экран по подписке, а app.ts отдаст новую версию
+  // движку.
   function updateBeat(patch: Partial<Beat>) {
-    saveBeats(getState().beats.map((b) => (b.id === beatId ? { ...b, ...patch } : b)))
+    const beat = currentBeat()
+    if (beat) target.save({ ...beat, ...patch })
   }
 
   // --- размер: выбор только при неоднозначной длине (кратной 12) ---
@@ -97,8 +148,8 @@ export function mountBeatEditorScreen(
   // --- темп бита: свой у каждого бита, сохраняется в нём ---
   const tempo = createTempoField({
     key: 'beat-bpm',
-    get: () => currentBeat()?.bpm ?? CONFIG.DEFAULT_BPM,
-    set: (bpm) => updateBeat({ bpm: clampBpm(bpm) }),
+    get: target.tempo.get,
+    set: target.tempo.set,
     rerender: () => render(),
     buttonClass: 'tempo-button',
     inputClass: 'input tempo-input',
@@ -141,7 +192,7 @@ export function mountBeatEditorScreen(
     const beat = currentBeat()
     showSaveDialog = false
     if (beat) updateBeat({ name: nameDraft.trim().slice(0, CONFIG.MAX_NAME_LENGTH) || beat.name })
-    onDone()
+    saving?.onDone()
   }
 
   function renderSaveDialog(): HTMLElement {
@@ -220,12 +271,12 @@ export function mountBeatEditorScreen(
   const layout = h('div', { className: 'stack stack--4' }, aboveGrid, grid.el, belowGrid)
 
   function render() {
-    const gate = accountGate('Войдите — биты хранятся в вашем аккаунте и видны на любом устройстве.')
+    const gate = accountGate(target.gateText)
     const beat = currentBeat()
     if (gate || !beat) {
       mount(
         container,
-        gate ?? (getState().beatsLoaded ? h('p', {}, 'Бит не найден.') : h('p', { className: 'text-center text-muted' }, 'Загрузка…'))
+        gate ?? (target.loaded() ? h('p', {}, target.notFoundText) : h('p', { className: 'text-center text-muted' }, 'Загрузка…'))
       )
       return
     }
@@ -244,9 +295,9 @@ export function mountBeatEditorScreen(
 
 
   // Играющий шаг подсвечивается напрямую в DOM сетки (grid.setPlayhead), в
-  // обход перерисовки — как и в patternScreen.ts. engine.onPlaybackState —
+  // обход перерисовки. engine.onPlaybackState —
   // единственный слот, но горячий путь занят ровно одним смонтированным
-  // экраном одновременно (как в metronomeScreen.ts/patternScreen.ts);
+  // экраном одновременно (как в metronomeScreen.ts/songScreen.ts);
   // engine.onPlayingChange занят футером в app.ts, поэтому старт игры
   // (прокрутить ленту к началу, как у референса) ловим здесь же.
   let wasPlaying = engine.isPlaying
@@ -259,7 +310,7 @@ export function mountBeatEditorScreen(
     grid.setPlayhead(engine.isPlaying && playback.patternStep >= 0 ? playback.patternStep : null)
   })
 
-  onRegisterSave(openSaveDialog)
+  saving?.onRegisterSave(openSaveDialog)
 
   const unsubscribe = subscribe(render)
   render()

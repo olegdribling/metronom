@@ -14,8 +14,8 @@
 // довисит до конца (nextNoteTime посчитан по старому bpm), новый темп
 // вступает в силу с СЛЕДУЮЩЕЙ доли — задержка максимум в один интервал
 // между долями на старом темпе. См. tests/audioEngine.test.ts.
-import { Song, PlaybackState, Pattern } from '../types.ts'
-import { PATTERN_STEPS, CONFIG, instrumentFrequencyMap } from '../config.ts'
+import { EngineSong, PlaybackState, Pattern } from '../types.ts'
+import { CONFIG, instrumentFrequencyMap } from '../config.ts'
 import { createSampleLoader } from './sampleLoader.ts'
 
 interface VisualEvent {
@@ -32,9 +32,9 @@ const EMPTY_PLAYBACK_STATE: PlaybackState = { beat: 1, bar: 0, subBeat: 0, patte
 const patternHasActiveSteps = (pattern: Pattern | undefined) =>
   !!pattern?.tracks?.some((track) => track.steps.some(Boolean))
 
-const totalBars = (song: Song) => song.sections.reduce((s, sec) => s + sec.bars, 0)
+const totalBars = (song: EngineSong) => song.sections.reduce((s, sec) => s + sec.bars, 0)
 
-const stepsPerBeatOf = (pattern: Pattern) => pattern.stepsPerBeat ?? 2
+const stepsPerBeatOf = (pattern: Pattern) => pattern.stepsPerBeat
 
 // Доля, опоздавшая больше чем на это, пропускается, а не играется: вкладку
 // придушили (фон, сон), и планировщик проснулся, когда доля уже прошла. Без
@@ -49,12 +49,13 @@ interface SoundSource {
   /** Грув и паттерн песни идут по кругу, филл — один раз. */
   loop: boolean
   /** Шаг показывается в событиях (patternStep) только для паттерна песни —
-   * его подсвечивает редактор паттерна и плейхед редактора бита. */
+   * его подсвечивает плейхед редактора бита (бит и паттерн песни играют там
+   * как паттерн песни без секций). */
   isSongPattern: boolean
 }
 
 export interface AudioEngine {
-  setSong(song: Song | null): void
+  setSong(song: EngineSong | null): void
   setBpm(bpm: number): void
   setVoiceCues(v: boolean): void
   setVoiceCount(v: boolean): void
@@ -107,7 +108,7 @@ export function createAudioEngine(): AudioEngine {
   // таймер старого запуска не доживёт до следующего.
   let runId = 0
   let bpm: number = CONFIG.DEFAULT_BPM
-  let currentSong: Song | null = null
+  let currentSong: EngineSong | null = null
   let voiceCues = false
   let voiceCount = false
   let visualQueue: VisualEvent[] = []
@@ -149,7 +150,7 @@ export function createAudioEngine(): AudioEngine {
   ensureAudioContext()
   void sampleLoader.preloadAllSamples()
 
-  function songHasNotes(song: Song | null): boolean {
+  function songHasNotes(song: EngineSong | null): boolean {
     return (
       !!song &&
       (patternHasActiveSteps(song.pattern) ||
@@ -306,9 +307,9 @@ export function createAudioEngine(): AudioEngine {
 
         if (usePatternSounds) {
           const { pattern } = source!
-          const patternLength = pattern.steps || PATTERN_STEPS
-          // Шагов на долю — из паттерна: у бита это M его размера N/M, у
-          // паттерна песни — 2 (восьмые), как было всегда.
+          const patternLength = pattern.steps
+          // Шагов на долю — M размера бита N/M (и у паттерна песни — он
+          // тоже бит).
           const subDiv = stepsPerBeatOf(pattern)
           const subDuration = 60 / bpm / subDiv
 

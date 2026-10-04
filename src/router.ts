@@ -1,6 +1,6 @@
 // Самописный роутер — без React, значит и без React Router. История
 // браузера (pushState), путь → обработчик. Экраны: метроном / плейлист /
-// песня / редактор паттерна / настройки.
+// песня / паттерн песни и биты (редактор бита) / настройки.
 export type RouteHandler = (params: Record<string, string>) => void
 
 interface Route {

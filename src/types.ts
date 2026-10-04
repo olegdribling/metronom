@@ -15,12 +15,13 @@ export interface PatternTrack {
   steps: boolean[]
 }
 
+/** То, что играет движок (engine/audioEngine.ts): бит, разрешённый в
+ * сэмплы кита (resolveBeatPattern, data/resolveBeat.ts). */
 export interface Pattern {
   steps: number
-  /** Сколько шагов звучит на одну долю. Нет — 2 (восьмые), как у паттерна
-   * песни (редактор паттерна). У бита — beat.beatDivision (шаг = 1/M доли,
+  /** Сколько шагов звучит на одну долю — M размера бита N/M (шаг = 1/M доли,
    * data/beatMeter.ts). */
-  stepsPerBeat?: number
+  stepsPerBeat: number
   tracks: PatternTrack[]
 }
 
@@ -102,12 +103,24 @@ export interface Section {
 export interface Song {
   id: number
   name: string
+  /** Темп песни; в ней же играет её паттерн (и в редакторе паттерна). */
   bpm: number
   /** Размер такта песни — как у кольца метронома: долей в такте и деление
    * доли. Открыли песню — метроном переключился на него (app.ts). Старым
    * песням normalizeSong() (data/songs.ts) ставит 4/4. */
   beatsPerBar: number
   beatDivision: number
+  sections: Section[]
+  /** Паттерн песни — бит внутри песни (не в библиотеке «Биты», решение
+   * пользователя): играет в секциях без своего бита, по кругу от начала
+   * песни, в темпе песни. Правится тем же редактором бита (/song/:id/pattern).
+   * Пустой — щелчок. Его bpm и name не используются. */
+  pattern: Beat
+}
+
+/** Песня, как её играет движок: секции (с подставленными паттернами битов)
+ * и паттерн песни, разрешённые в сэмплы (data/resolveBeat.ts). */
+export interface EngineSong {
   sections: Section[]
   pattern: Pattern
 }
@@ -153,9 +166,13 @@ export interface MetronomeSettings extends Meter {
   flash: boolean
 }
 
-/** Что играет страница: у метронома, песни (и её паттерна), бита — свой
- * звук (app.ts). У списков и настроек звука нет. */
-export type PlaybackSource = { kind: 'metronome' } | { kind: 'song'; songId: number } | { kind: 'beat'; beatId: string }
+/** Что играет страница: у метронома, песни, паттерна песни (только он, по
+ * кругу) и бита — свой звук (app.ts). У списков и настроек звука нет. */
+export type PlaybackSource =
+  | { kind: 'metronome' }
+  | { kind: 'song'; songId: number }
+  | { kind: 'songPattern'; songId: number }
+  | { kind: 'beat'; beatId: string }
 
 export interface SectionFormData {
   name: string

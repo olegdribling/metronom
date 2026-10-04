@@ -1,6 +1,7 @@
 // Экран песни: строка темпа и размера такта песни (свои у каждой песни, на
 // метроном и биты не влияют — решение пользователя; BPM — доли), секции
-// (порядок, такты, комментарий), вход в редактор паттерна. Одна песня
+// (порядок, такты, комментарий), «Редактор паттерна» — паттерн песни в том
+// же редакторе бита (/song/:id/pattern). Одна песня
 // внутри плейлиста — Song из state.songs. Play в футере на этой странице
 // играет эту песню (app.ts).
 //
@@ -10,7 +11,7 @@
 // текущей секции — .card--active, и экран сам доезжает до неё. Это горячий
 // путь: обновляется напрямую в DOM из engine.onPlaybackState, в обход
 // перерисовки экрана (как подсветка доли в metronomeScreen.ts и шага в
-// patternScreen.ts).
+// редакторе бита).
 //
 // Биты из библиотеки в секциях: в форме секции — «Бит секции» (грув на всю
 // секцию вместо паттерна песни), тап по квадратику-доле — филл с этой доли
@@ -46,7 +47,6 @@ const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comme
 
 export interface SongScreenOptions {
   onOpenPattern: () => void
-  onDeleted: () => void
   /** «Редактировать» в выборе филла — открыть бит в редакторе (из песни). */
   onEditBeat: (beatId: string, sectionId: string) => void
   /** Вернулись из редактора бита — доехать до этой секции. */
@@ -241,12 +241,6 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     const [moved] = sections.splice(from, 1)
     sections.splice(to, 0, moved)
     updateSong({ sections })
-  }
-
-  function deleteSong() {
-    if (!confirm(`Удалить песню "${currentSong()?.name}"? Это нельзя отменить.`)) return
-    saveSongs(getState().songs.filter((s) => s.id !== songId))
-    opts.onDeleted()
   }
 
   // Форма секции правит черновик (data) и сама себя НЕ перерисовывает: ввод
@@ -514,8 +508,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
               },
             }),
         h('hr', { className: 'divider' }),
-        button('Редактор паттерна', { iconName: 'grid-four', onClick: opts.onOpenPattern }),
-        button('Удалить песню', { variant: 'danger', iconName: 'trash', onClick: deleteSong })
+        button('Редактор паттерна', { iconName: 'grid-four', onClick: opts.onOpenPattern })
       )
     )
     // Элементы сетки новые — вернуть на них текущую закраску сразу, не

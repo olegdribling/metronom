@@ -1,9 +1,28 @@
 // Помощники для битов библиотеки. Сами биты хранятся в аккаунте
 // пользователя — users/{uid}/beats/{id} (data/userLibrary.ts).
-import { Beat, BeatTrack } from '../types.ts'
+import { Beat, BeatKind, BeatTrack, DrumRole } from '../types.ts'
 import { BEAT_MAX_STEPS, CONFIG, DEFAULT_KIT_ID, DRUM_KITS, DRUM_ROLES } from '../config.ts'
 import { fitMeter } from './beatMeter.ts'
-import { clampBpm } from './songs.ts'
+import { clampBpm } from './limits.ts'
+
+// Новый бит: один такт 1/4 — дальше длина наращивается в редакторе по
+// одному столбцу; сразу с тремя дорожками — самый частый стартовый набор.
+// Им же начинается паттерн новой песни (data/songs.ts).
+const EMPTY_BEAT_ROLES: DrumRole[] = ['hihat', 'snare', 'kick']
+
+export function createEmptyBeat(id: string, name: string, kind: BeatKind = 'beat'): Beat {
+  return {
+    id,
+    kind,
+    name,
+    steps: 4,
+    beatsPerBar: 1,
+    beatDivision: 4,
+    kitId: DEFAULT_KIT_ID,
+    bpm: CONFIG.DEFAULT_BPM,
+    tracks: EMPTY_BEAT_ROLES.map((role) => ({ role, steps: [false, false, false, false] })),
+  }
+}
 
 // Приводит бит из БД к актуальной модели: длина в шагах в пределах
 // 1..BEAT_MAX_STEPS, track.steps ровно такой длины, размер — по длине

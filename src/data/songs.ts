@@ -1,27 +1,17 @@
 // Песня как данные: приведение к актуальной модели при чтении из БД и чистые
 // расчёты по песне, общие для экранов (screens/songScreen.ts,
 // metronomeScreen.ts) и состояния (state/appState.ts).
-import { CONFIG, DEFAULT_KIT_ID, DEFAULT_METER, PATTERN_STEPS } from '../config.ts'
-import { Beat, DrumRole, Meter, Pattern, Section, SectionFill, Song } from '../types.ts'
+import { CONFIG, DEFAULT_METER } from '../config.ts'
+import { Beat, Meter, Section, SectionFill, Song } from '../types.ts'
+import { clampBpm, clampInt, clampMeter } from './limits.ts'
+import { createEmptyBeat, normalizeBeat } from './beatsLibrary.ts'
 
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
-  const n = Number(value)
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback
-}
+export { clampBpm, clampMeter }
 
 /** Такты секции: целое 1..MAX_SECTION_BARS. Поле ввода (songScreen.ts) и
  * чтение из БД — через это, иначе дробные такты рвут диапазоны секций в
  * движке, а «100000» строит сотни тысяч квадратиков. */
 export const clampBars = (value: unknown): number => clampInt(value, 1, CONFIG.MAX_SECTION_BARS, 1)
-
-export const clampBpm = (value: unknown): number => clampInt(value, CONFIG.MIN_BPM, CONFIG.MAX_BPM, CONFIG.DEFAULT_BPM)
-
-export function clampMeter(meter: Partial<Meter>): Meter {
-  return {
-    beatsPerBar: clampInt(meter.beatsPerBar, CONFIG.MIN_BEATS_PER_BAR, CONFIG.MAX_BEATS_PER_BAR, DEFAULT_METER.beatsPerBar),
-    beatDivision: clampInt(meter.beatDivision, CONFIG.MIN_BEAT_DIVISION, CONFIG.MAX_BEAT_DIVISION, DEFAULT_METER.beatDivision),
-  }
-}
 
 export function newSectionId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -34,8 +24,21 @@ export function createEmptySong(name: string): Song {
     bpm: CONFIG.DEFAULT_BPM,
     ...DEFAULT_METER,
     sections: [{ id: newSectionId(), name: '1 2 3 4', bars: 2, intro: true, comment: '' }],
-    pattern: { steps: PATTERN_STEPS, tracks: [] },
+    pattern: emptySongPattern(),
   }
+}
+
+/** Паттерн песни — бит внутри песни (Song.pattern). Пустой — щелчок. */
+export const SONG_PATTERN_ID = 'pattern'
+export const emptySongPattern = (): Beat => createEmptyBeat(SONG_PATTERN_ID, 'Паттерн')
+
+// Паттерн из БД. Раньше он был в своём формате (16 клеток восьмыми, дорожки
+// bd/sd/hh, без kitId) — такие выкидываются, песня начинает с пустого
+// (решение пользователя: старые паттерны не переносим).
+function normalizeSongPattern(raw: unknown): Beat {
+  const p = raw as Partial<Beat> | undefined
+  if (!p || typeof p !== 'object' || typeof p.kitId !== 'string') return emptySongPattern()
+  return normalizeBeat({ ...p, id: SONG_PATTERN_ID, name: 'Паттерн' })
 }
 
 // Сырые данные из БД: любые поля могут отсутствовать или быть не того типа.
@@ -68,14 +71,13 @@ function normalizeSection(raw: Raw, index: number, usedIds: Set<string>): Sectio
 export function normalizeSong(input: unknown): Song {
   const raw = (input ?? {}) as Raw
   const usedIds = new Set<string>()
-  const pattern = raw.pattern as Pattern | undefined
   return {
     id: Number(raw.id),
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'Без названия',
     bpm: clampBpm(raw.bpm),
     ...clampMeter(raw as Partial<Meter>),
     sections: (Array.isArray(raw.sections) ? raw.sections : []).map((sec, i) => normalizeSection((sec ?? {}) as Raw, i, usedIds)),
-    pattern: pattern && Array.isArray(pattern.tracks) ? pattern : { steps: PATTERN_STEPS, tracks: [] },
+    pattern: normalizeSongPattern(raw.pattern),
   }
 }
 
@@ -127,21 +129,19 @@ export function sliceForBeat(song: Song, sectionIndex: number, at: number, id: s
       tracks: groove.tracks.map((t) => ({ role: t.role, steps: Array.from({ length: m }, (_, i) => !!t.steps[offset + i]) })),
     }
   }
-  // Паттерн песни: дорожки — сэмплы редактора паттерна (bd/sd/hh), идут по
-  // кругу от начала песни, stepsPerBeat шагов на долю (как в движке).
+  // Паттерн песни: идёт по кругу от начала песни, M шагов на долю (как в
+  // движке).
   const pattern = song.pattern
-  const roleById: Record<string, DrumRole> = { bd: 'kick', sd: 'snare', hh: 'hihat' }
-  if (pattern?.tracks.some((t) => t.steps.some(Boolean))) {
-    const m = pattern.stepsPerBeat ?? 2
+  if (pattern.tracks.some((t) => t.steps.some(Boolean))) {
+    const m = pattern.beatDivision
     const songBeat = song.sections.slice(0, sectionIndex).reduce((n, s) => n + s.bars, 0) * song.beatsPerBar + at
     const offset = (songBeat * m) % pattern.steps
-    const tracks = pattern.tracks
-      .filter((t) => roleById[t.id])
-      .map((t) => ({ role: roleById[t.id], steps: Array.from({ length: m }, (_, i) => !!t.steps[(offset + i) % pattern.steps]) }))
-    return { id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: DEFAULT_KIT_ID, bpm, tracks }
+    return {
+      id, kind: 'break', name, steps: m, beatsPerBar: 1, beatDivision: m, kitId: pattern.kitId, bpm,
+      tracks: pattern.tracks.map((t) => ({ role: t.role, steps: Array.from({ length: m }, (_, i) => !!t.steps[(offset + i) % pattern.steps]) })),
+    }
   }
-  const roles: DrumRole[] = ['hihat', 'snare', 'kick']
-  return { id, kind: 'break', name, steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: DEFAULT_KIT_ID, bpm, tracks: roles.map((role) => ({ role, steps: [false, false, false, false] })) }
+  return { ...createEmptyBeat(id, name, 'break'), bpm }
 }
 
 /** Что в квадратике (доле `at` секции) — для «Копировать влево/вправо»
@@ -176,7 +176,7 @@ export function squareContent(song: Song, sectionIndex: number, at: number, id: 
     }
   }
   const hasGroove = !!byId(sec.beatId)
-  const patternHasNotes = !!song.pattern?.tracks.some((t) => t.steps.some(Boolean))
+  const patternHasNotes = song.pattern.tracks.some((t) => t.steps.some(Boolean))
   if (!hasGroove && !patternHasNotes) return null
   return { beat: sliceForBeat(song, sectionIndex, at, id, beats) }
 }

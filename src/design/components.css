@@ -30,8 +30,6 @@
                          степперы BPM (__steppers) и галочки (__controls)
    .stepper-value      — число между кнопками «−»/«+»
    .tempo-button       — крупный BPM вне кольца (редактор бита); .tempo-input — его ввод
-   .step               — клетка шага паттерна (--on — цвет из --cell-color)
-   .pattern-grid       — сетка редактора паттерна (__num — номер шага, __label — дорожка)
    .beat-grid          — сетка редактора бита (components/beatGrid.ts): строки-
                          иконки, лента столбцов, выделение, тулбар, вставка
    .drum-icon          — SVG-иконка роли барабана (components/drumIcons.ts)
@@ -376,19 +374,6 @@
   font-weight: var(--font-weight-bold);
   cursor: pointer;
 }
-
-.step {
-  height: 40px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  cursor: pointer;
-}
-.step--on {
-  border-color: transparent;
-  background-color: var(--cell-color, var(--color-accent));
-}
-.step--current { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
 
 /* Сетка редактора бита — components/beatGrid.ts. Геометрия как у референса
    (realdrummetronome.com/editor): столбец 44px (клетка 40 + поля по 2),
@@ -783,27 +768,6 @@
   font-size: var(--font-size-h2);
   font-weight: var(--font-weight-bold);
   text-align: center;
-}
-
-/* Сетка редактора паттерна — screens/patternScreen.ts; число шагов
-   (--pattern-steps) выставляет экран. */
-.pattern-grid {
-  display: grid;
-  grid-template-columns: 64px repeat(var(--pattern-steps, 16), minmax(2rem, 1fr));
-  gap: var(--space-1);
-  align-items: center;
-  overflow-x: auto;
-}
-.pattern-grid__num {
-  text-align: center;
-  font-size: var(--font-size-caption);
-  color: var(--color-text-muted);
-}
-.pattern-grid__label {
-  padding-right: var(--space-2);
-  font-family: monospace;
-  font-weight: var(--font-weight-bold);
-  text-align: right;
 }
 
 .divider {

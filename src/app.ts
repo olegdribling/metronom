@@ -11,10 +11,9 @@ import { engineSettingsFor, sameSource, songForEngine, type EngineSettings } fro
 import { mountMetronomeScreen } from './screens/metronomeScreen.ts'
 import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
-import { mountPatternScreen } from './screens/patternScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
-import { mountBeatEditorScreen } from './screens/beatEditorScreen.ts'
+import { libraryBeatTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
 import { PlaybackSource } from './types.ts'
 
 const ROUTE_PATHS: Record<RouteKind, string> = {
@@ -195,7 +194,6 @@ export function startApp(root: HTMLElement): void {
     mountScreen((c) =>
       mountSongScreen(c, songId, engine, {
         onOpenPattern: () => router.navigate(`/song/${songId}/pattern`),
-        onDeleted: () => router.navigate('/playlist'),
         onEditBeat: (beatId, sectionId) => {
           beatEditorReturn = { songId, sectionId }
           router.navigate(`/beats/${encodeURIComponent(beatId)}`)
@@ -207,10 +205,11 @@ export function startApp(root: HTMLElement): void {
 
   router.on('/song/:id/pattern', (params) => {
     const songId = Number(params.id)
-    // Паттерн — часть песни: играет та же песня, переход игру не прерывает.
-    enterPage({ kind: 'song', songId })
-    setScreen('playlist', () => 'Паттерн', { showBack: true, onBack: () => router.navigate(`/song/${songId}`) })
-    mountScreen((c) => mountPatternScreen(c, songId, engine))
+    // Паттерн песни — в том же редакторе, что биты; играет только он, по
+    // кругу, в темпе песни. Имени и дискеты нет.
+    enterPage({ kind: 'songPattern', songId })
+    setScreen('playlist', () => 'Паттерн', { showBack: true, onBack: () => router.navigate(`/song/${songId}`), centerTitle: true })
+    mountScreen((c) => mountBeatEditorScreen(c, songPatternTarget(songId), engine, null))
   })
 
   router.on('/beats', () => {
@@ -242,8 +241,11 @@ export function startApp(root: HTMLElement): void {
       centerTitle: true,
     })
     mountScreen((c) =>
-      mountBeatEditorScreen(c, beatId, engine, leave, (fn) => {
-        requestSave = fn
+      mountBeatEditorScreen(c, libraryBeatTarget(beatId), engine, {
+        onDone: leave,
+        onRegisterSave: (fn) => {
+          requestSave = fn
+        },
       })
     )
   })
