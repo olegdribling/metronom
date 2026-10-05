@@ -20,7 +20,11 @@ import { createSampleLoader } from './sampleLoader.ts'
 
 interface VisualEvent {
   time: number
-  type: 'beat' | 'tick' | 'stop'
+  // beat — доля (сбрасывает subBeat), tick — точка деления доли (кольцо),
+  // step — шаг паттерна внутри доли (только patternStep: доля и точка
+  // кольца не меняются — иначе свой паттерн метронома с триолями откатывал
+  // бы кольцо на крупную точку посреди доли).
+  type: 'beat' | 'tick' | 'step' | 'stop'
   beat?: number
   bar?: number
   patternStep?: number
@@ -340,7 +344,7 @@ export function createAudioEngine(): AudioEngine {
 
             visualQueue.push({
               time: subTime,
-              type: 'beat',
+              type: sub === 0 ? 'beat' : 'step',
               beat: currentBeatValue,
               bar: currentBarValue,
               patternStep: source!.isSongPattern ? stepIndex : -1,
@@ -421,6 +425,10 @@ export function createAudioEngine(): AudioEngine {
         }
         if (event.type === 'tick') {
           setPlaybackState({ subBeat: event.subBeat! })
+          continue
+        }
+        if (event.type === 'step') {
+          setPlaybackState({ patternStep: event.patternStep ?? -1 })
           continue
         }
         setPlaybackState({ beat: event.beat!, bar: event.bar!, subBeat: 0, patternStep: event.patternStep ?? -1 })

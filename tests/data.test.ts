@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
 import { clampBars, createEmptySong, emptySongPattern, normalizeSong, pruneFills, sliceForBeat, squareContent, withSongMeter } from '../src/data/songs.ts'
-import { engineSettingsFor, metronomeMeter, sameSource, songForEngine } from '../src/data/engineSettings.ts'
+import { engineSettingsFor, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
 import { stableStringify } from '../src/data/docSync.ts'
 import { Beat, Song } from '../src/types.ts'
@@ -249,21 +249,23 @@ test('песня для движка: паттерн песни разрешён
   assert.equal(engineSong.pattern.stepsPerBeat, 4)
 })
 
-test('свой паттерн метронома: круг — его размер, клетка — точка в темпе метронома', () => {
+test('свой паттерн метронома: скорость и размер метронома, доля паттерна = доля метронома', () => {
   const pattern = { ...emptySongPattern(), id: 'metronome-pattern', steps: 6, beatsPerBar: 2, beatDivision: 3, tracks: [{ role: 'kick' as const, steps: [true, false, false, true, false, false] }] }
   const on = { ...metronome, usePattern: true }
   const s = engineSettingsFor({ kind: 'metronome' }, { metronome: on, metronomePattern: pattern, songs: [], beats: [], voiceCues: false })!
-  assert.equal(s.bpm, 40, '120 клеток в минуту при 3 клетках на долю — 40 долей')
-  assert.deepEqual([s.beatsPerBar, s.beatDivision], [2, 3])
+  assert.equal(s.bpm, 30, 'метроном 120 точек в минуту по 4 на долю — 30 долей; паттерн играет в этих долях')
+  assert.deepEqual([s.beatsPerBar, s.beatDivision], [4, 4], 'размер и кольцо — метронома')
   assert.deepEqual(s.content, { beat: pattern })
-  assert.deepEqual(metronomeMeter(on, pattern), { beatsPerBar: 2, beatDivision: 3 })
+  const engineSong = songForEngine(s.content)!
+  assert.equal(engineSong.pattern.stepsPerBeat, 3, 'клетки паттерна делят долю метронома на 3 (триоли)')
+  assert.deepEqual(engineSong.sections, [], 'по кругу своей длины')
 
   const off = engineSettingsFor({ kind: 'metronome' }, { metronome, metronomePattern: pattern, songs: [], beats: [], voiceCues: false })!
   assert.equal(off.content, null, 'галочка снята — щелчок')
-  assert.deepEqual(metronomeMeter(metronome, pattern), metronome)
   const notSignedIn = engineSettingsFor({ kind: 'metronome' }, { metronome: on, metronomePattern: null, songs: [], beats: [], voiceCues: false })!
   assert.equal(notSignedIn.content, null, 'паттерна нет (не вошли) — щелчок')
 
   const editor = engineSettingsFor({ kind: 'metronomePattern' }, { metronome, metronomePattern: null, songs: [], beats: [], voiceCues: false })!
   assert.equal((editor.content as { beat: { id: string } }).beat.id, 'metronome-pattern', 'в редакторе играет он всегда, ещё не набит — пустой')
+  assert.equal(editor.bpm, 30, 'в редакторе — та же скорость доли, что на метрономе')
 })

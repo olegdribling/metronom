@@ -350,3 +350,22 @@ test('старт с секции: 2 такта отсчёта (голос + ще
   assert.deepEqual(beats.slice(0, 8).map((b) => [...b].sort()), countIn.map((b) => [...b].sort()), 'отсчёт: one…four дважды, на каждой доле — щелчок')
   assert.deepEqual(beats.slice(8, 12), [[BD], [BD], [BD], [BD]], 'дальше секция B (паттерн песни), а не A с её хэтом')
 })
+
+test('шаги паттерна внутри доли не сдвигают точку кольца (свой паттерн на метрономе)', async (t) => {
+  const { engine, advance } = setup(t)
+  engine.setBeatDivision(4) // кольцо: 4 точки на долю
+  engine.setSong(makeSong({ sections: [], pattern: pattern('real_kick', [true, true, true], 3) })) // триоли
+  engine.setBpm(60) // доля = 1 с
+  const points: string[] = []
+  const steps: number[] = []
+  engine.onPlaybackState((s) => {
+    if (!engine.isPlaying) return
+    const p = `${s.beat}:${s.subBeat}`
+    if (p !== points[points.length - 1]) points.push(p)
+    if (s.patternStep !== steps[steps.length - 1]) steps.push(s.patternStep)
+  })
+  await engine.start()
+  advance(1050) // первая доля: 0,1–1,1 с
+  assert.deepEqual(points, ['1:0', '1:1', '1:2', '1:3'], 'точки кольца идут подряд, без отката на крупную')
+  assert.deepEqual(steps, [0, 1, 2], 'шаги паттерна — свои, три на долю')
+})

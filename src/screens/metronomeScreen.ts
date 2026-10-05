@@ -13,12 +13,12 @@ import { createBeatRing } from '../components/beatRing.ts'
 import { createMeterField, createTempoField } from '../components/tempoControls.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, setMetronome } from '../state/appState.ts'
-import { metronomeMeter } from '../data/engineSettings.ts'
 
 export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine, onEditPattern: () => void): () => void {
   const metronome = () => getState().metronome
-  // «Свой паттерн» включён и есть: круг — его размер (data/engineSettings.ts).
-  const meterNow = () => metronomeMeter(metronome(), getState().metronomePattern)
+  // «Свой паттерн» включён и есть: играет он вместо щелчка, а скорость,
+  // размер и кольцо — метронома (data/engineSettings.ts).
+  const meterNow = () => metronome()
   const patternActive = () => metronome().usePattern && !!getState().metronomePattern
 
   // Центр кольца перестраивается на каждое изменение (ввод BPM, панель
@@ -26,7 +26,8 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
   // узел, не пересоздаётся ради этого.
   const centerEl = h('div', { className: 'dial__center' })
   const ring = createBeatRing(centerEl)
-  // С паттерном размер задаёт он — бейдж только показывает, не правится.
+  // С паттерном бейдж размера неактивен — только показывает (решение
+  // пользователя).
   const renderCenter = () =>
     mount(
       centerEl,
@@ -121,7 +122,13 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
   // Горячий путь: подсветка и вспышка кольца обновляются напрямую из
   // движка на каждое событие (каждая точка — удар), в обход полной
   // перерисовки экрана — иначе риск сбить аудио-тайминг лишней работой.
-  const releasePlayback = engine.onPlaybackState(() => {
+  // Вспышка — только на точку кольца (новая доля или деление), не на шаг
+  // своего паттерна внутри доли.
+  let lastPoint = ''
+  const releasePlayback = engine.onPlaybackState((playback) => {
+    const point = `${playback.bar}:${playback.beat}:${playback.subBeat}`
+    if (point === lastPoint) return
+    lastPoint = point
     updateRing()
     if (engine.isPlaying && metronome().flash) ring.flash()
   })
