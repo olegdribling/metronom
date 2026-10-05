@@ -51,7 +51,7 @@ export function startApp(root: HTMLElement): void {
   const sameContent = (a: EngineSettings['content'] | undefined, b: EngineSettings['content']) =>
     a === b ||
     (!!a && !!b && 'song' in a && 'song' in b && a.song === b.song && a.beats === b.beats) ||
-    (!!a && !!b && 'beat' in a && 'beat' in b && a.beat === b.beat)
+    (!!a && !!b && 'beat' in a && 'beat' in b && a.beat === b.beat && a.speed === b.speed)
 
   function syncEngine() {
     const state = getState()

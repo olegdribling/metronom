@@ -168,7 +168,13 @@ export interface MetronomeSettings extends Meter {
    * (state.metronomePattern) вместо щелчка; круг — размер паттерна, клетка —
    * точка в темпе метронома. Нет паттерна (не вошли) — щелчок. */
   usePattern: boolean
+  /** Скорость своего паттерна относительно метронома: ×½, ×1, ×2 (решение
+   * пользователя) — щелчки и голос не меняются. */
+  patternSpeed: PatternSpeed
 }
+
+export type PatternSpeed = 0.5 | 1 | 2
+export const PATTERN_SPEEDS: PatternSpeed[] = [0.5, 1, 2]
 
 /** Что играет страница: у метронома, песни, паттерна песни (только он, по
  * кругу) и бита — свой звук (app.ts). У списков и настроек звука нет. */

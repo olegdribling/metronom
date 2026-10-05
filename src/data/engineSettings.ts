@@ -1,7 +1,7 @@
 // Что и как играет движок для источника звука страницы (app.ts): у
 // метронома, песни и бита всё своё, друг на друга они не влияют (решение
 // пользователя). Чистые функции — проверяются в tests/data.test.ts.
-import { Beat, EngineSong, MetronomeSettings, PlaybackSource, Song } from '../types.ts'
+import { Beat, EngineSong, MetronomeSettings, Pattern, PlaybackSource, Song } from '../types.ts'
 import { resolveBeatPattern, resolveSongForEngine } from './resolveBeat.ts'
 import { emptyMetronomePattern } from './beatsLibrary.ts'
 
@@ -12,9 +12,9 @@ export interface EngineSettings {
   beatDivision: number
   voiceCount: boolean
   voiceCues: boolean
-  /** Что играть: песня (с битами — подставить паттерны секций) или бит;
-   * null — щелчок метронома. */
-  content: { song: Song; beats: Beat[] } | { beat: Beat } | null
+  /** Что играть: песня (с битами — подставить паттерны секций) или бит
+   * (speed — множитель скорости своего паттерна метронома); null — щелчок. */
+  content: { song: Song; beats: Beat[] } | { beat: Beat; speed?: number } | null
 }
 
 export interface EngineInputs {
@@ -47,7 +47,7 @@ export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs):
         beatDivision: meter.beatDivision,
         voiceCount: m.voiceCount,
         voiceCues: false,
-        content: { beat: pattern },
+        content: { beat: pattern, speed: m.patternSpeed },
       }
     }
     return {
@@ -94,5 +94,21 @@ function beatSettings(beat: Beat, bpm: number): EngineSettings {
 export function songForEngine(content: EngineSettings['content']): EngineSong | null {
   if (!content) return null
   if ('song' in content) return resolveSongForEngine(content.song, content.beats)
-  return { sections: [], pattern: resolveBeatPattern(content.beat) }
+  return { sections: [], pattern: withSpeed(resolveBeatPattern(content.beat), content.speed ?? 1) }
+}
+
+// Множитель скорости своего паттерна метронома (×½, ×1, ×2): ×2 — вдвое
+// больше шагов на долю; ×½ — каждая клетка растянута на два шага (между
+// клетками пустой шаг), шагов на долю столько же. Движку нужны целые шаги
+// на долю — поэтому ×½ не делением M (у 3 вышло бы 1,5).
+function withSpeed(pattern: Pattern, speed: number): Pattern {
+  if (speed === 2) return { ...pattern, stepsPerBeat: pattern.stepsPerBeat * 2 }
+  if (speed === 0.5) {
+    return {
+      ...pattern,
+      steps: pattern.steps * 2,
+      tracks: pattern.tracks.map((t) => ({ ...t, steps: t.steps.flatMap((on) => [on, false]) })),
+    }
+  }
+  return pattern
 }

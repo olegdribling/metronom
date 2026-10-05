@@ -3,7 +3,7 @@
 // свой контейнер (кроме "горячего" пути — подсветки битов, см.
 // screens/metronomeScreen.ts, там обновление идёт напрямую в DOM,
 // в обход перерисовки всего экрана, как и в v1).
-import { Beat, MetronomeSettings, PlaylistInfo, Song, ThemeKey } from '../types.ts'
+import { Beat, MetronomeSettings, PATTERN_SPEEDS, PatternSpeed, PlaylistInfo, Song, ThemeKey } from '../types.ts'
 import { CONFIG, DEFAULT_METER } from '../config.ts'
 import type { UserLibrary } from '../data/userLibrary.ts'
 import { openUserLibrary } from '../data/userLibrary.ts'
@@ -72,6 +72,8 @@ function readJson(key: string): Record<string, unknown> | null {
 
 // Настройки метронома; до них размер и голос хранились отдельными ключами
 // (metronom_meter, metronom_voice_count) — подхватываем, чтобы не сбросить.
+const patternSpeedOf = (value: unknown): PatternSpeed => (PATTERN_SPEEDS.includes(value as PatternSpeed) ? (value as PatternSpeed) : 1)
+
 function loadMetronome(): MetronomeSettings {
   const saved = readJson('metronom_metronome') ?? {}
   const oldMeter = readJson('metronom_meter') ?? DEFAULT_METER
@@ -81,6 +83,7 @@ function loadMetronome(): MetronomeSettings {
     voiceCount: typeof saved.voiceCount === 'boolean' ? saved.voiceCount : readStored('metronom_voice_count') === 'true',
     flash: saved.flash === true,
     usePattern: saved.usePattern === true,
+    patternSpeed: patternSpeedOf(saved.patternSpeed),
   }
 }
 
@@ -268,7 +271,7 @@ export function saveSongs(songs: Song[]): void {
 /** Настройки метронома: темп, размер, голос — только его, запоминаются. */
 export function setMetronome(patch: Partial<MetronomeSettings>): void {
   const next = { ...state.metronome, ...patch }
-  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount, flash: !!next.flash, usePattern: !!next.usePattern }
+  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount, flash: !!next.flash, usePattern: !!next.usePattern, patternSpeed: patternSpeedOf(next.patternSpeed) }
   writeStored('metronom_metronome', JSON.stringify(state.metronome))
   notify()
 }

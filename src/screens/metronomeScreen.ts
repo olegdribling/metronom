@@ -13,6 +13,7 @@ import { createBeatRing } from '../components/beatRing.ts'
 import { createMeterField, createTempoField } from '../components/tempoControls.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, setMetronome } from '../state/appState.ts'
+import { PATTERN_SPEEDS } from '../types.ts'
 
 export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine, onEditPattern: () => void): () => void {
   const metronome = () => getState().metronome
@@ -75,6 +76,25 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
     type: 'checkbox',
     onChange: (e: Event) => setMetronome({ usePattern: (e.target as HTMLInputElement).checked }),
   })
+  // Скорость своего паттерна относительно метронома: ×½ / ×1 / ×2 (решение
+  // пользователя; щелчки и голос не меняются). Бейджи — как выбор размера в
+  // редакторе бита (.dial__meter, --active).
+  const speedEl = h('div', { className: 'row row--1' })
+  const renderSpeed = () =>
+    mount(
+      speedEl,
+      ...PATTERN_SPEEDS.map((speed) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            className: `dial__meter${metronome().patternSpeed === speed ? ' dial__meter--active' : ''}`,
+            onClick: () => setMetronome({ patternSpeed: speed }),
+          },
+          speed === 0.5 ? '×½' : `×${speed}`
+        )
+      )
+    )
   const flashCheckbox = h('input', {
     type: 'checkbox',
     onChange: (e: Event) => setMetronome({ flash: (e.target as HTMLInputElement).checked }),
@@ -101,9 +121,10 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
         // щелчка, карандаш — редактор (/metronome/pattern).
         h(
           'div',
-          { className: 'row' },
+          { className: 'row row--wrap row--center' },
           h('label', { className: 'row checkbox-row' }, patternCheckbox, h('span', {}, 'Свой паттерн')),
-          iconButton('pencil-simple', { onClick: onEditPattern, ariaLabel: 'Редактировать свой паттерн' })
+          iconButton('pencil-simple', { onClick: onEditPattern, ariaLabel: 'Редактировать свой паттерн' }),
+          speedEl
         )
       )
     )
@@ -115,6 +136,7 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
     voiceCheckbox.checked = m.voiceCount
     flashCheckbox.checked = m.flash
     patternCheckbox.checked = m.usePattern
+    renderSpeed()
     ring.setHandMode(!m.flash)
     updateRing()
   }
