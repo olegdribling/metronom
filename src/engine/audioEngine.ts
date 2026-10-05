@@ -65,8 +65,11 @@ export interface AudioEngine {
    * звучат — обычным кликом (доля — акцентом) или, при счёте голосом,
    * номером внутри доли. */
   setBeatDivision(n: number): void
-  /** Повторный вызов, пока движок запускается или играет, ничего не делает. */
-  start(): Promise<void>
+  /** Повторный вызов, пока движок запускается или играет, ничего не делает.
+   * fromBar — начать с этого такта песни (▶ на секции, songScreen.ts), перед
+   * ним countInBars тактов отсчёта: голос номера доли + акцентный щелчок.
+   * Без параметров — с начала, без отсчёта. */
+  start(opts?: { fromBar?: number; countInBars?: number }): Promise<void>
   stop(): void
   /** Проиграть один сэмпл прямо сейчас, вне расписания — прослушка в
    * редакторе бита (тап по иконке инструмента, «Звук при клике»). Не
@@ -97,6 +100,10 @@ export function createAudioEngine(): AudioEngine {
   let nextNoteTime = 0
   let beat = 1
   let bar = 0
+  // Такт, с которого играет песня после отсчёта: такты до него (от
+  // fromBar − countInBars) — отсчёт. Прошли — отсчёта больше нет (иначе
+  // зацикленная песня отсчитывала бы на каждом круге).
+  let countInEndBar = -Infinity
   let beatsPerBar = 4
   let beatDivision = 4
   let isPlaying = false
@@ -281,7 +288,14 @@ export function createAudioEngine(): AudioEngine {
       const currentBeatValue = beat
       const currentBarValue = bar
 
-      if (scheduledTime >= ct - LATE_SKIP_SEC) {
+      if (scheduledTime >= ct - LATE_SKIP_SEC && currentBarValue < countInEndBar) {
+        // Отсчёт перед стартом с секции (решение пользователя): голос номера
+        // доли (до восьми) и акцентный щелчок на каждую долю. Такт для
+        // экранов — −1: сетка песни ничего не подсвечивает.
+        visualQueue.push({ time: scheduledTime, type: 'beat', beat: currentBeatValue, bar: -1, patternStep: -1 })
+        if (currentBeatValue <= 8) playInstrumentSound(`voice_${currentBeatValue}`, scheduledTime)
+        clickSound(scheduledTime, true)
+      } else if (scheduledTime >= ct - LATE_SKIP_SEC) {
         const totalBeatsPassed = currentBarValue * beatsPerBar + (currentBeatValue - 1)
         const sectionIdx = sectionRanges.findIndex((r) => currentBarValue >= r.start && currentBarValue <= r.end)
         const beatInSection =
@@ -371,6 +385,7 @@ export function createAudioEngine(): AudioEngine {
       if (beat >= beatsPerBar) {
         beat = 1
         bar += 1
+        if (bar >= countInEndBar) countInEndBar = -Infinity
         if (songTotalBars > 0 && bar >= songTotalBars) {
           if (loopIndefinitely) {
             bar = 0
@@ -415,7 +430,7 @@ export function createAudioEngine(): AudioEngine {
     visualRaf = requestAnimationFrame(processVisuals)
   }
 
-  async function start() {
+  async function start(opts: { fromBar?: number; countInBars?: number } = {}) {
     if (isPlaying || starting) return
     starting = true
     const run = ++runId
@@ -430,8 +445,11 @@ export function createAudioEngine(): AudioEngine {
     }
     if (run !== runId) return // пока ждали resume(), нажали Стоп
 
+    const fromBar = Math.max(0, Math.floor(opts.fromBar ?? 0))
+    const countInBars = Math.max(0, Math.floor(opts.countInBars ?? 0))
     beat = 1
-    bar = 0
+    bar = fromBar - countInBars
+    countInEndBar = countInBars > 0 ? fromBar : -Infinity
     visualQueue = []
     resetPlaybackState()
     setIsPlaying(true)

@@ -329,3 +329,24 @@ test('Стоп сразу глушит уже запланированные у�
   assert.ok(ahead.length >= 3, `ожидали заранее запланированные удары, их ${ahead.length}`)
   assert.ok(ahead.every((p) => p.silenced), 'после Стоп запланированные удары не должны прозвучать')
 })
+
+test('старт с секции: 2 такта отсчёта (голос + щелчок на каждую долю), потом сама секция', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  engine.setVoiceCues(true) // голос смены секции во время отсчёта молчит
+  engine.setSong(
+    makeSong({
+      pattern: pattern('real_kick', [true, false]),
+      // B — 2 такта: её первый такт не последний, голоса перехода в нём нет
+      sections: [section('A', 1, { groove: pattern('real_hihat', [true, false], 2) }), section('B', 2), section('C', 1)],
+    })
+  )
+  engine.setBpm(600) // доля = 100 мс
+  await engine.start({ fromBar: 1, countInBars: 2 })
+  advance(1300)
+  const voice = (n: number) => `sound/Voices/number_${n}.wav`
+  const beats = soundsByBeat(played, 600)
+  const countIn = [1, 2, 3, 4, 1, 2, 3, 4].map((n) => [voice(n), CLICK])
+  assert.deepEqual(beats.slice(0, 8).map((b) => [...b].sort()), countIn.map((b) => [...b].sort()), 'отсчёт: one…four дважды, на каждой доле — щелчок')
+  assert.deepEqual(beats.slice(8, 12), [[BD], [BD], [BD], [BD]], 'дальше секция B (паттерн песни), а не A с её хэтом')
+})

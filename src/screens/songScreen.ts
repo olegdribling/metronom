@@ -234,6 +234,13 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     updateSong({ sections: pruneFills(sections, song.beatsPerBar) })
   }
 
+  // ▶ на секции: играть с неё, перед ней 2 такта отсчёта (голос + щелчок,
+  // решение пользователя); уже играет — перезапуск с этой секции.
+  function playFrom(firstBar: number) {
+    engine.stop()
+    void engine.start({ fromBar: firstBar, countInBars: 2 })
+  }
+
   function reorderSections(from: number, to: number) {
     const song = currentSong()
     if (!song || from === to || song.sections[to]?.intro) return
@@ -438,6 +445,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
           : h(
               'div',
               { className: 'row row--1 push-right' },
+              iconButton('play', { onClick: () => playFrom(firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
               iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию' }),
               iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию' })
             )
@@ -528,7 +536,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   function showPlayback(playback: PlaybackState, force = false) {
     const song = currentSong()
     if (!song) return
-    const current = engine.isPlaying ? playback.bar * song.beatsPerBar + (playback.beat - 1) : -1
+    // Такт −1 — отсчёт перед стартом с секции: ничего не подсвечиваем.
+    const playing = engine.isPlaying && playback.bar >= 0
+    const current = playing ? playback.bar * song.beatsPerBar + (playback.beat - 1) : -1
     if (current !== shownBeat || force) {
       shownBeat = current
       beatCells.forEach((cell) => {
@@ -538,7 +548,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       })
     }
     let section = -1
-    if (engine.isPlaying) {
+    if (playing) {
       let end = 0
       section = song.sections.findIndex((sec) => playback.bar < (end += sec.bars))
     }
