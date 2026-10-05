@@ -35,6 +35,8 @@ export interface AppState {
   /** Синхронизация с аккаунтом остановилась — текст для плашки в футере. */
   connectionError: string | null
   beats: Beat[]
+  /** Свой паттерн метронома — в аккаунте (null — не набит или не вошли). */
+  metronomePattern: Beat | null
   /** Биты аккаунта уже пришли — до этого редактор бита показывает
    * «Загрузка…», а не «Бит не найден». */
   beatsLoaded: boolean
@@ -78,6 +80,7 @@ function loadMetronome(): MetronomeSettings {
     ...clampMeter({ ...oldMeter, ...saved }),
     voiceCount: typeof saved.voiceCount === 'boolean' ? saved.voiceCount : readStored('metronom_voice_count') === 'true',
     flash: saved.flash === true,
+    usePattern: saved.usePattern === true,
   }
 }
 
@@ -94,6 +97,7 @@ const state: AppState = {
   songsLoaded: false,
   connectionError: null,
   beats: [],
+  metronomePattern: null,
   beatsLoaded: false,
 }
 
@@ -180,6 +184,7 @@ function attachLibrary(lib: UserLibrary) {
     notify()
   })
   lib.onBeatsChange((beats) => patchState({ beats, beatsLoaded: true }))
+  lib.onMetronomePatternChange((metronomePattern) => patchState({ metronomePattern }))
   lib.onError((err) => {
     console.error('Ошибка синхронизации с Firestore:', err)
     patchState({ connectionError: describeSyncError(err) })
@@ -199,6 +204,7 @@ function resetLibraryState() {
     songsLoaded: false,
     beats: [],
     beatsLoaded: false,
+    metronomePattern: null,
     connectionError: null,
   })
 }
@@ -262,8 +268,15 @@ export function saveSongs(songs: Song[]): void {
 /** Настройки метронома: темп, размер, голос — только его, запоминаются. */
 export function setMetronome(patch: Partial<MetronomeSettings>): void {
   const next = { ...state.metronome, ...patch }
-  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount, flash: !!next.flash }
+  state.metronome = { bpm: clampBpm(next.bpm), ...clampMeter(next), voiceCount: !!next.voiceCount, flash: !!next.flash, usePattern: !!next.usePattern }
   writeStored('metronom_metronome', JSON.stringify(state.metronome))
+  notify()
+}
+
+/** Свой паттерн метронома — в аккаунт (без входа некуда сохранять). */
+export function saveMetronomePattern(pattern: Beat): void {
+  state.metronomePattern = pattern
+  library?.saveMetronomePattern(pattern)
   notify()
 }
 

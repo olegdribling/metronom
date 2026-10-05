@@ -374,6 +374,16 @@ ctx.resume()`) или играет, ничего не делает; `schedule()`
 12 часов (`.dial__sector`, `conic-gradient`, сброс в начале такта); точки
 закрашиваются как обычно; стоим — стрелка на 12, сектора нет.
 
+«Свой паттерн» (решение пользователя): галочка `metronome.usePattern`
+(настройка устройства) — играть паттерн вместо щелчка; карандаш — тот же
+редактор бита (`/metronome/pattern`, `metronomePatternTarget`: темп —
+метронома, имени и дискеты нет, «Загрузить из моих битов» — копия бита из
+библиотеки). Сам паттерн — в аккаунте, поле `metronomePattern` документа
+`users/{uid}` (`saveMetronomePattern`, с дебаунсом). С паттерном круг — его
+размер (`metronomeMeter`), каждая клетка — точка в темпе метронома (движку
+`bpm / beatDivision` паттерна), бейдж размера только показывает
+(`.dial__meter--fixed`). Не вошли (паттерна нет) — щелчок.
+
 Раскладка экрана: кольцо — квадрат по меньшей стороне свободного места
 (`.metronome__dial-area`, `container-type: size`, `.dial` — `100cqmin`, точки
 в процентах), кнопки темпа и галочки — внизу над футером. У `.metronome`
@@ -527,7 +537,8 @@ Enter. Вставка — полупрозрачный блок за курсо�
 пользователя, к ним вернёмся отдельной задачей.
 
 Firestore (`data/userLibrary.ts`):
-- `users/{uid}` → `{ lastPlaylistId }` — последний плейлист открывается сам
+- `users/{uid}` → `{ lastPlaylistId, metronomePattern }` — свой паттерн
+  метронома; последний плейлист открывается сам
   один раз при входе (`appState.applyCurrentPlaylist`, флаг `autoOpenDone`).
 - `users/{uid}/playlists/{id}` → `{ name, createdAt, updatedAt, songsMigrated }`.
 - `users/{uid}/playlists/{id}/songs/{songId}` → `Song` + `updatedAt` —

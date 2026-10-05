@@ -27,7 +27,8 @@ import { icon } from '../icons.ts'
 import { CONFIG, DRUM_ROLES, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
 import { Beat, DrumRole, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats, saveSongs } from '../state/appState.ts'
+import { getState, subscribe, saveBeats, saveMetronomePattern, saveSongs, setMetronome } from '../state/appState.ts'
+import { emptyMetronomePattern } from '../data/beatsLibrary.ts'
 import { clampBpm } from '../data/songs.ts'
 import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
 
@@ -42,6 +43,9 @@ export interface BeatEditorTarget {
   notFoundText: string
   gateText: string
   tempo: { get(): number; set(bpm: number): void }
+  /** «Загрузить из моих битов» — копия бита из библиотеки вместо того, что в
+   * редакторе (свой паттерн метронома). */
+  loadFromLibrary?: boolean
 }
 
 // Бит из библиотеки «Биты»: свой темп, название — через «Сохранить».
@@ -81,6 +85,25 @@ export function songPatternTarget(songId: number): BeatEditorTarget {
   }
 }
 
+// Свой паттерн метронома (в аккаунте): темп — метронома (BPM — скорость
+// клетки, как точки кольца), имени нет, можно загрузить копию своего бита.
+// Ещё не набит — пустой; сохранится с первой правкой.
+export function metronomePatternTarget(): BeatEditorTarget {
+  const empty = emptyMetronomePattern()
+  return {
+    get: () => getState().metronomePattern ?? empty,
+    save: saveMetronomePattern,
+    loaded: () => true,
+    notFoundText: '',
+    gateText: 'Войдите — свой паттерн хранится в вашем аккаунте и виден на любом устройстве.',
+    tempo: {
+      get: () => getState().metronome.bpm,
+      set: (bpm) => setMetronome({ bpm }),
+    },
+    loadFromLibrary: true,
+  }
+}
+
 export function mountBeatEditorScreen(
   container: HTMLElement,
   target: BeatEditorTarget,
@@ -93,6 +116,7 @@ export function mountBeatEditorScreen(
   let showSaveDialog = false
   let nameDraft = ''
   let showKitPicker = false
+  let showLibrary = false
 
   const currentBeat = () => target.get()
 
@@ -230,6 +254,49 @@ export function mountBeatEditorScreen(
     )
   }
 
+  // «Загрузить из моих битов»: тап по биту — его копия (ноты, длина, размер,
+  // кит) вместо того, что сейчас в редакторе; id и имя остаются свои.
+  function renderLibraryLoad(): HTMLElement {
+    const toggle = h(
+      'button',
+      { type: 'button', className: 'list-row', onClick: () => { showLibrary = !showLibrary; render() } },
+      h('span', { className: 'grow' }, 'Загрузить из моих битов'),
+      icon(showLibrary ? 'caret-up' : 'caret-down')
+    )
+    if (!showLibrary) return toggle
+    const beats = getState().beats
+    return h(
+      'div',
+      {},
+      toggle,
+      h(
+        'div',
+        { className: 'card stack stack--2 mt-2' },
+        beats.length === 0
+          ? h('p', { className: 'text-small text-muted' }, 'В библиотеке пока нет битов — создайте их в «Битах».')
+          : null,
+        ...beats.map((b) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'list-row',
+              onClick: () => {
+                const current = currentBeat()
+                if (!current) return
+                showLibrary = false
+                updateBeat({ steps: b.steps, beatsPerBar: b.beatsPerBar, beatDivision: b.beatDivision, kitId: b.kitId, tracks: b.tracks.map((t) => ({ ...t, steps: [...t.steps] })) })
+              },
+            },
+            icon('drum'),
+            h('span', { className: 'grow' }, b.name),
+            h('span', { className: 'badge' }, `${b.beatsPerBar}/${b.beatDivision}`)
+          )
+        )
+      )
+    )
+  }
+
   // Sound/кит — своя роль→сэмпл раскладка (DRUM_KITS, config.ts), хранится
   // на самом бите (beat.kitId), не общая на приложение.
   function renderKitPicker(beat: Beat): HTMLElement {
@@ -289,6 +356,7 @@ export function mountBeatEditorScreen(
       showAddRole ? renderAddRole(beat) : null,
       showSaveDialog ? renderSaveDialog() : null,
       renderKitPicker(beat),
+      target.loadFromLibrary ? renderLibraryLoad() : null,
       renderBpm()
     )
   }

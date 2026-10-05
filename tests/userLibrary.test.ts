@@ -7,7 +7,7 @@ import { test, mock, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { createFakeFirestore } from './helpers/fakeFirestore.ts'
 import { settle } from './helpers/fakeAudio.ts'
-import type { Song } from '../src/types.ts'
+import type { Beat, Song } from '../src/types.ts'
 
 const fake = createFakeFirestore()
 mock.module('firebase/firestore', { namedExports: fake.api })
@@ -171,4 +171,23 @@ test('ошибка подписки уходит в onError, после закр
   assert.deepEqual(errors.map((e) => (e as { code: string }).code), ['permission-denied'])
   lib.destroy()
   fake.control.failNextListen = null
+})
+
+test('свой паттерн метронома — в документе пользователя, с дебаунсом', async (t) => {
+  const { lib } = setup(t, () => {
+    fake.store.set(`users/${UID}`, { lastPlaylistId: null, metronomePattern: { kind: 'beat', name: 'x', steps: 4, beatsPerBar: 1, beatDivision: 4, kitId: 'real', bpm: 120, tracks: [{ role: 'kick', steps: [true, false, false, false] }] } })
+  })
+  const seen: (Beat | null)[] = []
+  lib.onMetronomePatternChange((p) => seen.push(p))
+  await settle()
+  assert.equal(seen.at(-1)?.id, 'metronome-pattern')
+  assert.deepEqual(seen.at(-1)?.tracks[0].steps, [true, false, false, false])
+
+  const next = { ...seen.at(-1)!, tracks: [{ role: 'snare' as const, steps: [false, true, false, true] }] }
+  lib.saveMetronomePattern(next)
+  await settle()
+  assert.equal((fake.store.get(`users/${UID}`)!.metronomePattern as Beat).tracks[0].role, 'kick', 'до дебаунса не записано')
+  await afterDebounce(t)
+  assert.equal((fake.store.get(`users/${UID}`)!.metronomePattern as Beat).tracks[0].role, 'snare')
+  assert.equal(fake.store.get(`users/${UID}`)!.lastPlaylistId, null, 'остальные поля документа целы')
 })

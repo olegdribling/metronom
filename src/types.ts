@@ -164,6 +164,10 @@ export interface MetronomeSettings extends Meter {
    * вспышки по точкам прыжками ходит стрелка (точки закрашиваются как
    * обычно). По умолчанию выключено (решение пользователя). */
   flash: boolean
+  /** «Свой паттерн»: метроном играет паттерн из аккаунта
+   * (state.metronomePattern) вместо щелчка; круг — размер паттерна, клетка —
+   * точка в темпе метронома. Нет паттерна (не вошли) — щелчок. */
+  usePattern: boolean
 }
 
 /** Что играет страница: у метронома, песни, паттерна песни (только он, по
@@ -172,6 +176,7 @@ export type PlaybackSource =
   | { kind: 'metronome' }
   | { kind: 'song'; songId: number }
   | { kind: 'songPattern'; songId: number }
+  | { kind: 'metronomePattern' }
   | { kind: 'beat'; beatId: string }
 
 export interface SectionFormData {

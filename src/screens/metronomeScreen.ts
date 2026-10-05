@@ -8,21 +8,33 @@
 // мелкой: 120 — удар раз в 0,5 с (движку app.ts отдаёт BPM доли — делённый
 // на деление доли, data/engineSettings.ts).
 import { h, mount } from '../dom.ts'
-import { button } from '../components/button.ts'
+import { button, iconButton } from '../components/button.ts'
 import { createBeatRing } from '../components/beatRing.ts'
 import { createMeterField, createTempoField } from '../components/tempoControls.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, setMetronome } from '../state/appState.ts'
+import { metronomeMeter } from '../data/engineSettings.ts'
 
-export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine): () => void {
+export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine, onEditPattern: () => void): () => void {
   const metronome = () => getState().metronome
+  // «Свой паттерн» включён и есть: круг — его размер (data/engineSettings.ts).
+  const meterNow = () => metronomeMeter(metronome(), getState().metronomePattern)
+  const patternActive = () => metronome().usePattern && !!getState().metronomePattern
 
   // Центр кольца перестраивается на каждое изменение (ввод BPM, панель
   // размера, сами значения), а само кольцо (ring.element) — персистентный
   // узел, не пересоздаётся ради этого.
   const centerEl = h('div', { className: 'dial__center' })
   const ring = createBeatRing(centerEl)
-  const renderCenter = () => mount(centerEl, tempo.render(), meter.render())
+  // С паттерном размер задаёт он — бейдж только показывает, не правится.
+  const renderCenter = () =>
+    mount(
+      centerEl,
+      tempo.render(),
+      patternActive()
+        ? h('div', { className: 'dial__meter-anchor' }, h('span', { className: 'dial__meter dial__meter--fixed' }, `${meterNow().beatsPerBar}/${meterNow().beatDivision}`))
+        : meter.render()
+    )
 
   const tempo = createTempoField({
     key: 'metronome-bpm',
@@ -40,7 +52,7 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
 
   function updateRing() {
     const playback = engine.playbackState
-    const m = metronome()
+    const m = meterNow()
     ring.update({
       beat: playback.beat,
       subBeat: playback.subBeat,
@@ -57,6 +69,10 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
   const voiceCheckbox = h('input', {
     type: 'checkbox',
     onChange: (e: Event) => setMetronome({ voiceCount: (e.target as HTMLInputElement).checked }),
+  })
+  const patternCheckbox = h('input', {
+    type: 'checkbox',
+    onChange: (e: Event) => setMetronome({ usePattern: (e.target as HTMLInputElement).checked }),
   })
   const flashCheckbox = h('input', {
     type: 'checkbox',
@@ -79,7 +95,15 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
           )
         ),
         h('label', { className: 'row checkbox-row' }, voiceCheckbox, h('span', {}, 'Считать вслух вместо клика')),
-        h('label', { className: 'row checkbox-row' }, flashCheckbox, h('span', {}, 'Включить мигание'))
+        h('label', { className: 'row checkbox-row' }, flashCheckbox, h('span', {}, 'Включить мигание')),
+        // «Свой паттерн» (решение пользователя): галочка — играть его вместо
+        // щелчка, карандаш — редактор (/metronome/pattern).
+        h(
+          'div',
+          { className: 'row' },
+          h('label', { className: 'row checkbox-row' }, patternCheckbox, h('span', {}, 'Свой паттерн')),
+          iconButton('pencil-simple', { onClick: onEditPattern, ariaLabel: 'Редактировать свой паттерн' })
+        )
       )
     )
   )
@@ -89,6 +113,7 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
     renderCenter()
     voiceCheckbox.checked = m.voiceCount
     flashCheckbox.checked = m.flash
+    patternCheckbox.checked = m.usePattern
     ring.setHandMode(!m.flash)
     updateRing()
   }

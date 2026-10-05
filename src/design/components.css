@@ -23,7 +23,8 @@
    .dial__sector       — закрашенный сектор за стрелкой (мигание выключено)
    .dial__center       — центр кольца (BPM + размер такта)
    .dial__bpm          — крупная цифра BPM (тап — редактировать)
-   .dial__meter        — бейдж «долей/деление» (тап — редактировать); --active — выбранный
+   .dial__meter        — бейдж «долей/деление» (тап — редактировать); --active — выбранный,
+                         --fixed — только показывает (свой паттерн метронома)
    .dial__meter-editor — всплывающая под бейджем панель размера такта
                          (--end — прижата к правому краю)
    .metronome          — экран метронома: кольцо по центру (__dial-area), внизу
@@ -312,6 +313,12 @@
   border-color: var(--color-accent);
 }
 .dial__meter-anchor { position: relative; }
+/* Размер, который не правится (метроном играет свой паттерн — размер его). */
+.dial__meter--fixed {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
 .dial__meter-editor {
   position: absolute;
   top: 100%;

@@ -1,8 +1,9 @@
 // Что и как играет движок для источника звука страницы (app.ts): у
 // метронома, песни и бита всё своё, друг на друга они не влияют (решение
 // пользователя). Чистые функции — проверяются в tests/data.test.ts.
-import { Beat, EngineSong, MetronomeSettings, PlaybackSource, Song } from '../types.ts'
+import { Beat, EngineSong, Meter, MetronomeSettings, PlaybackSource, Song } from '../types.ts'
 import { resolveBeatPattern, resolveSongForEngine } from './resolveBeat.ts'
+import { emptyMetronomePattern } from './beatsLibrary.ts'
 
 export interface EngineSettings {
   /** Темп движка — доли (крупной точки) в минуту. */
@@ -18,6 +19,7 @@ export interface EngineSettings {
 
 export interface EngineInputs {
   metronome: MetronomeSettings
+  metronomePattern: Beat | null
   songs: Song[]
   beats: Beat[]
   voiceCues: boolean
@@ -27,8 +29,23 @@ export const sameSource = (a: PlaybackSource, b: PlaybackSource): boolean => JSO
 
 /** null — играть нечего: песня или бит ещё не пришли из БД или удалены. */
 export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs): EngineSettings | null {
-  if (source.kind === 'metronome') {
+  if (source.kind === 'metronome' || source.kind === 'metronomePattern') {
     const m = inputs.metronome
+    // «Свой паттерн» (решение пользователя): круг — размер паттерна, каждая
+    // клетка — точка в темпе метронома. В его редакторе играет он всегда
+    // (ещё не набит — пустой), на странице метронома — если включён и есть.
+    const pattern =
+      source.kind === 'metronomePattern' ? (inputs.metronomePattern ?? emptyMetronomePattern()) : m.usePattern ? inputs.metronomePattern : null
+    if (pattern) {
+      return {
+        bpm: m.bpm / pattern.beatDivision,
+        beatsPerBar: pattern.beatsPerBar,
+        beatDivision: pattern.beatDivision,
+        voiceCount: m.voiceCount,
+        voiceCues: false,
+        content: { beat: pattern },
+      }
+    }
     return {
       // У метронома BPM — скорость каждой точки кольца: доля из
       // beatDivision точек длится beatDivision ударов (решение пользователя).
@@ -70,6 +87,11 @@ function beatSettings(beat: Beat, bpm: number): EngineSettings {
 /** Песня для движка: копия с подставленными паттернами битов секций, или
  * бит как песня без секций — тогда он играет ровно beat.steps шагов по кругу
  * (с секцией движок обрывал бы круг на конце «песни» в своих тактах). */
+/** Размер круга метронома: с включённым своим паттерном — паттерна. */
+export function metronomeMeter(m: MetronomeSettings, pattern: Beat | null): Meter {
+  return m.usePattern && pattern ? { beatsPerBar: pattern.beatsPerBar, beatDivision: pattern.beatDivision } : m
+}
+
 export function songForEngine(content: EngineSettings['content']): EngineSong | null {
   if (!content) return null
   if ('song' in content) return resolveSongForEngine(content.song, content.beats)

@@ -13,7 +13,7 @@ import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
-import { libraryBeatTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
+import { libraryBeatTarget, metronomePatternTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
 import { PlaybackSource } from './types.ts'
 
 const ROUTE_PATHS: Record<RouteKind, string> = {
@@ -168,7 +168,15 @@ export function startApp(root: HTMLElement): void {
   router.on('/metronome', () => {
     enterPage({ kind: 'metronome' })
     setScreen('metronome', () => 'Metronom')
-    mountScreen((c) => mountMetronomeScreen(c, engine))
+    mountScreen((c) => mountMetronomeScreen(c, engine, () => router.navigate('/metronome/pattern')))
+  })
+
+  // Свой паттерн метронома — в том же редакторе бита; играет он, по кругу,
+  // клетка — точка в темпе метронома. Имени и дискеты нет.
+  router.on('/metronome/pattern', () => {
+    enterPage({ kind: 'metronomePattern' })
+    setScreen('metronome', () => 'Свой паттерн', { showBack: true, onBack: () => router.navigate('/metronome'), centerTitle: true })
+    mountScreen((c) => mountBeatEditorScreen(c, metronomePatternTarget(), engine, null))
   })
 
   router.on('/playlist', () => {

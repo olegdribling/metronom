@@ -10,6 +10,10 @@ import { clampBpm } from './limits.ts'
 // Им же начинается паттерн новой песни (data/songs.ts).
 const EMPTY_BEAT_ROLES: DrumRole[] = ['hihat', 'snare', 'kick']
 
+/** Свой паттерн метронома (страница «Метроном», в аккаунте пользователя). */
+export const METRONOME_PATTERN_ID = 'metronome-pattern'
+export const emptyMetronomePattern = (): Beat => createEmptyBeat(METRONOME_PATTERN_ID, 'Свой паттерн')
+
 export function createEmptyBeat(id: string, name: string, kind: BeatKind = 'beat'): Beat {
   return {
     id,

@@ -1,6 +1,6 @@
 // Библиотека пользователя в Firestore — всё лежит под его аккаунтом
 // (вход через Google, data/auth.ts), коды и общий доступ пока не делаем:
-//   users/{uid}                                  { lastPlaylistId }
+//   users/{uid}                                  { lastPlaylistId, metronomePattern }
 //   users/{uid}/playlists/{playlistId}           { name, createdAt, updatedAt, songsMigrated }
 //   users/{uid}/playlists/{playlistId}/songs/{songId}   Song + updatedAt
 //   users/{uid}/beats/{beatId}                   Beat + updatedAt
@@ -25,7 +25,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { getDb } from './firebase.ts'
-import { normalizeBeat } from './beatsLibrary.ts'
+import { METRONOME_PATTERN_ID, normalizeBeat } from './beatsLibrary.ts'
 import { normalizeSong } from './songs.ts'
 import { createDocSync, type DocSync } from './docSync.ts'
 import { CONFIG } from '../config.ts'
@@ -37,6 +37,8 @@ export interface UserLibrary {
   onSongsChange(cb: (playlistId: string, songs: Song[]) => void): void
   onBeatsChange(cb: (beats: Beat[]) => void): void
   onLastPlaylistChange(cb: (id: string | null) => void): void
+  /** Свой паттерн метронома (бит; null — ещё не набит). */
+  onMetronomePatternChange(cb: (pattern: Beat | null) => void): void
   onError(cb: (err: unknown) => void): void
   /** Создаёт плейлист и сразу возвращает его id (id генерируется на клиенте,
    * в снимках он появится сразу — из локального кэша). */
@@ -48,6 +50,7 @@ export interface UserLibrary {
   saveSongs(playlistId: string, songs: Song[]): void
   saveBeats(beats: Beat[]): void
   setLastPlaylist(id: string | null): void
+  saveMetronomePattern(pattern: Beat): void
   /** Отправить отложенные правки сейчас — перед выходом из аккаунта, пока
    * ещё есть права на запись. */
   flush(): void
@@ -86,6 +89,11 @@ export function openUserLibrary(uid: string): UserLibrary {
   let songsListener: ((playlistId: string, songs: Song[]) => void) | null = null
   let beatsListener: ((beats: Beat[]) => void) | null = null
   let lastPlaylistListener: ((id: string | null) => void) | null = null
+  let metronomePatternListener: ((pattern: Beat | null) => void) | null = null
+  // Свой паттерн метронома — поле документа пользователя, запись с
+  // дебаунсом; пока она ждёт, снимок свою версию не навязывает (как в
+  // docSync.ts).
+  let pendingPattern: { pattern: Beat; timer: ReturnType<typeof setTimeout> } | null = null
   let errorListener: ((err: unknown) => void) | null = null
   let destroyed = false
 
@@ -230,8 +238,13 @@ export function openUserLibrary(uid: string): UserLibrary {
     onSnapshot(
       userRef,
       (snap) => {
-        lastPlaylistId = (snap.data()?.lastPlaylistId as string | undefined) ?? null
+        const data = snap.data()
+        lastPlaylistId = (data?.lastPlaylistId as string | undefined) ?? null
         lastPlaylistListener?.(lastPlaylistId)
+        if (!pendingPattern) {
+          const raw = data?.metronomePattern as (Beat & { id?: string }) | undefined
+          metronomePatternListener?.(raw ? normalizeBeat({ ...raw, id: METRONOME_PATTERN_ID }) : null)
+        }
       },
       reportError
     ),
@@ -245,7 +258,16 @@ export function openUserLibrary(uid: string): UserLibrary {
     pendingLegacy.clear()
   }
 
+  function writeMetronomePattern(pattern: Beat) {
+    setDoc(userRef, { metronomePattern: pattern }, { merge: true }).catch(reportError)
+  }
+
   function flush() {
+    if (pendingPattern) {
+      clearTimeout(pendingPattern.timer)
+      writeMetronomePattern(pendingPattern.pattern)
+      pendingPattern = null
+    }
     flushLegacy()
     songsSync?.flush()
     beatsSync.flush()
@@ -263,6 +285,19 @@ export function openUserLibrary(uid: string): UserLibrary {
     },
     onLastPlaylistChange: (cb) => {
       lastPlaylistListener = cb
+    },
+    onMetronomePatternChange: (cb) => {
+      metronomePatternListener = cb
+    },
+    saveMetronomePattern(pattern) {
+      if (pendingPattern) clearTimeout(pendingPattern.timer)
+      pendingPattern = {
+        pattern,
+        timer: setTimeout(() => {
+          pendingPattern = null
+          writeMetronomePattern(pattern)
+        }, CONFIG.SAVE_DEBOUNCE_MS),
+      }
     },
     onError: (cb) => {
       errorListener = cb
