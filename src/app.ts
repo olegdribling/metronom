@@ -3,9 +3,25 @@
 import { h } from './dom.ts'
 import { createRouter } from './router.ts'
 import { createAudioEngine } from './engine/audioEngine.ts'
-import { appHeader, HeaderRightAction } from './components/appHeader.ts'
+import { appHeader } from './components/appHeader.ts'
+import { iconButton } from './components/button.ts'
+import { lockButton } from './components/lockButton.ts'
+import { askLeave } from './components/leaveDialog.ts'
 import { appFooter, RouteKind } from './components/appFooter.ts'
-import { getState, patchState, retrySync, setUserLibrary, clearUserLibrary, subscribe } from './state/appState.ts'
+import {
+  getState,
+  patchState,
+  retrySync,
+  setUserLibrary,
+  clearUserLibrary,
+  subscribe,
+  commitDraft,
+  discardDraft,
+  draftDirty,
+  resetPageEditing,
+  setUnlocked,
+  type AppState,
+} from './state/appState.ts'
 import { onUserChange } from './data/auth.ts'
 import { engineSettingsFor, sameSource, songForEngine, type EngineSettings } from './data/engineSettings.ts'
 import { mountMetronomeScreen } from './screens/metronomeScreen.ts'
@@ -14,7 +30,7 @@ import { mountSongScreen } from './screens/songScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
 import { libraryBeatTarget, metronomePatternTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
-import { PlaybackSource } from './types.ts'
+import { Beat, PlaybackSource, Song } from './types.ts'
 
 const ROUTE_PATHS: Record<RouteKind, string> = {
   metronome: '/metronome',
@@ -53,9 +69,30 @@ export function startApp(root: HTMLElement): void {
     (!!a && !!b && 'song' in a && 'song' in b && a.song === b.song && a.beats === b.beats) ||
     (!!a && !!b && 'beat' in a && 'beat' in b && a.beat === b.beat && a.speed === b.speed)
 
+  // Играют несохранённые правки (state.draft): их и слушают, пока правят.
+  // Списки с правкой — те же объекты, пока не изменились ни правка, ни
+  // сохранённое (sameContent сравнивает ссылки).
+  let draftLists: { draft: AppState['draft']; songs: Song[]; beats: Beat[]; out: { songs: Song[]; beats: Beat[] } } | null = null
+  function withDraft(state: AppState): { songs: Song[]; beats: Beat[] } {
+    const d = state.draft
+    if (!d) return state
+    if (draftLists?.draft !== d || draftLists.songs !== state.songs || draftLists.beats !== state.beats) {
+      draftLists = {
+        draft: d,
+        songs: state.songs,
+        beats: state.beats,
+        out: {
+          songs: d.kind === 'song' ? state.songs.map((s) => (s.id === d.song.id ? d.song : s)) : state.songs,
+          beats: d.kind === 'beat' ? state.beats.map((b) => (b.id === d.beat.id ? d.beat : b)) : state.beats,
+        },
+      }
+    }
+    return draftLists.out
+  }
+
   function syncEngine() {
     const state = getState()
-    const settings = engineSettingsFor(activeSource, state)
+    const settings = engineSettingsFor(activeSource, { ...state, ...withDraft(state) })
     sourceReady = !!settings
     if (!settings) {
       // Песни или бита нет: ещё не пришли из БД — или удалили, пока играли.
@@ -78,6 +115,7 @@ export function startApp(root: HTMLElement): void {
   // звук, если играл, останавливается); без звука (списки, настройки) —
   // играющее доигрывает.
   function enterPage(source: PlaybackSource | null) {
+    resetPageEditing()
     pageSource = source
     if (source && !sameSource(source, activeSource)) {
       if (engine.isPlaying) engine.stop()
@@ -101,7 +139,10 @@ export function startApp(root: HTMLElement): void {
   let titleFn: () => string = () => 'Metronom'
   let showBack = false
   let onBack: () => void = () => {}
-  let rightAction: HeaderRightAction | undefined
+  // Справа в шапке: замок (lock) и дискета (save — сохранить правки
+  // страницы; неактивна, когда сохранять нечего).
+  let lock = false
+  let save: { onClick: () => void; enabled: () => boolean } | undefined
   let centerTitle = false
   let screenCleanup: (() => void) | null = null
   let chromeKey = ''
@@ -115,11 +156,16 @@ export function startApp(root: HTMLElement): void {
     // Play — только на странице со своим звуком, когда ему есть что играть;
     // Стоп — всегда.
     const canPlay = !!pageSource && sourceReady && engine.canStart
-    const key = [routeKind, title, engine.isPlaying, canPlay, state.connectionError].join('|')
+    const canSave = !!save?.enabled()
+    const key = [routeKind, title, engine.isPlaying, canPlay, state.connectionError, state.unlocked, canSave].join('|')
     if (!force && key === chromeKey) return
     chromeKey = key
 
-    const newHeader = appHeader({ title, showBack, onBack, rightAction, centerTitle })
+    const actions = [
+      lock ? lockButton({ unlocked: state.unlocked, onUnlock: () => setUnlocked(true), onLock: () => setUnlocked(false) }) : null,
+      save ? iconButton('floppy-disk', { ariaLabel: 'Сохранить', disabled: !canSave, onClick: save.onClick }) : null,
+    ].filter((el): el is HTMLButtonElement => !!el)
+    const newHeader = appHeader({ title, showBack, onBack, actions, centerTitle })
     headerEl.replaceWith(newHeader)
     headerEl = newHeader
 
@@ -145,13 +191,20 @@ export function startApp(root: HTMLElement): void {
   function setScreen(
     kind: RouteKind,
     title: () => string,
-    opts: { showBack?: boolean; onBack?: () => void; rightAction?: HeaderRightAction; centerTitle?: boolean } = {}
+    opts: {
+      showBack?: boolean
+      onBack?: () => void
+      lock?: boolean
+      save?: { onClick: () => void; enabled: () => boolean }
+      centerTitle?: boolean
+    } = {}
   ) {
     routeKind = kind
     titleFn = title
     showBack = !!opts.showBack
     onBack = opts.onBack ?? (() => {})
-    rightAction = opts.rightAction
+    lock = !!opts.lock
+    save = opts.save
     centerTitle = !!opts.centerTitle
     renderChrome(true)
   }
@@ -181,7 +234,7 @@ export function startApp(root: HTMLElement): void {
 
   router.on('/playlist', () => {
     enterPage(null)
-    setScreen('playlist', () => 'Плейлист')
+    setScreen('playlist', () => 'Плейлист', { lock: true })
     mountScreen((c) => mountPlaylistScreen(c, (songId) => router.navigate(`/song/${songId}`)))
   })
 
@@ -198,6 +251,8 @@ export function startApp(root: HTMLElement): void {
     setScreen('playlist', () => getState().songs.find((s) => s.id === songId)?.name ?? 'Песня', {
       showBack: true,
       onBack: () => router.navigate('/playlist'),
+      lock: true,
+      save: { onClick: commitDraft, enabled: draftDirty },
     })
     mountScreen((c) =>
       mountSongScreen(c, songId, engine, {
@@ -214,15 +269,21 @@ export function startApp(root: HTMLElement): void {
   router.on('/song/:id/pattern', (params) => {
     const songId = Number(params.id)
     // Паттерн песни — в том же редакторе, что биты; играет только он, по
-    // кругу, в темпе песни. Имени и дискеты нет.
+    // кругу, в темпе песни. Имени нет; правки — только дискетой, замка нет
+    // (решение пользователя).
     enterPage({ kind: 'songPattern', songId })
-    setScreen('playlist', () => 'Паттерн', { showBack: true, onBack: () => router.navigate(`/song/${songId}`), centerTitle: true })
+    setScreen('playlist', () => 'Паттерн', {
+      showBack: true,
+      onBack: () => router.navigate(`/song/${songId}`),
+      save: { onClick: commitDraft, enabled: draftDirty },
+      centerTitle: true,
+    })
     mountScreen((c) => mountBeatEditorScreen(c, songPatternTarget(songId), engine, null))
   })
 
   router.on('/beats', () => {
     enterPage(null)
-    setScreen('beats', () => 'Биты')
+    setScreen('beats', () => 'Биты', { lock: true })
     mountScreen((c) => mountBeatsScreen(c, (beatId) => router.navigate(`/beats/${encodeURIComponent(beatId)}`)))
   })
 
@@ -231,7 +292,9 @@ export function startApp(root: HTMLElement): void {
     // Иконка "дискета" в шапке дёргает openSaveDialog внутри уже
     // смонтированного экрана — экран сам регистрирует свою функцию через
     // onRegisterSave при монтировании (mountScreen ниже выполняется сразу
-    // после setScreen, до первого возможного клика по иконке).
+    // после setScreen, до первого возможного клика по иконке). Дискета
+    // здесь ещё и переименовывает — поэтому активна и без правок, если
+    // замок открыт.
     let requestSave: () => void = () => {}
     enterPage({ kind: 'beat', beatId })
     const back = beatEditorReturn
@@ -245,7 +308,8 @@ export function startApp(root: HTMLElement): void {
     setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
       onBack: leave,
-      rightAction: { icon: 'floppy-disk', ariaLabel: 'Сохранить', onClick: () => requestSave() },
+      lock: true,
+      save: { onClick: () => requestSave(), enabled: () => draftDirty() || getState().unlocked },
       centerTitle: true,
     })
     mountScreen((c) =>
@@ -265,6 +329,28 @@ export function startApp(root: HTMLElement): void {
   })
 
   router.notFoundHandler(() => router.navigate('/metronome'))
+
+  // Уходят со страницы с несохранёнными правками — спросить (решение
+  // пользователя): «Сохранить» — в аккаунт и уйти, «Не сохранять» —
+  // выбросить и уйти, «Остаться» — никуда не уходить.
+  let asking = false
+  router.setGuard((proceed) => {
+    if (!draftDirty()) return false
+    if (asking) return true
+    asking = true
+    void askLeave().then((choice) => {
+      asking = false
+      if (choice === 'stay') return
+      if (choice === 'save') commitDraft()
+      else discardDraft()
+      proceed()
+    })
+    return true
+  })
+  // Закрывают вкладку или приложение — тут браузер спрашивает сам, своим окном.
+  window.addEventListener('beforeunload', (e) => {
+    if (draftDirty()) e.preventDefault()
+  })
 
   // Песни, плейлисты и биты — в аккаунте (data/userLibrary.ts): вошёл —
   // открываем его библиотеку (последний плейлист откроется сам), вышел —

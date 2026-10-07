@@ -63,6 +63,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                     ariaLabel: `Удалить бит «${beat.name}»`,
                     confirmText: `Удалить бит «${beat.name}»? Это нельзя отменить. В песнях, где он стоит, будет «бит удалён».`,
                     onDelete: () => deleteBeat(beat.id),
+                    disabled: !getState().unlocked,
                   }
                 )
               )

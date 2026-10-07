@@ -3,12 +3,13 @@
 // свой контейнер (кроме "горячего" пути — подсветки битов, см.
 // screens/metronomeScreen.ts, там обновление идёт напрямую в DOM,
 // в обход перерисовки всего экрана, как и в v1).
-import { Beat, MetronomeSettings, PATTERN_SPEEDS, PatternSpeed, PlaylistInfo, Song, ThemeKey } from '../types.ts'
+import { Beat, EditDraft, MetronomeSettings, PATTERN_SPEEDS, PatternSpeed, PlaylistInfo, Song, ThemeKey } from '../types.ts'
 import { CONFIG, DEFAULT_METER } from '../config.ts'
 import type { UserLibrary } from '../data/userLibrary.ts'
 import { openUserLibrary } from '../data/userLibrary.ts'
 import { clampBpm, clampMeter } from '../data/songs.ts'
 import { signOutUser, type AppUser } from '../data/auth.ts'
+import { stableStringify } from '../data/docSync.ts'
 
 export interface AppState {
   themeId: ThemeKey
@@ -40,6 +41,14 @@ export interface AppState {
   /** Биты аккаунта уже пришли — до этого редактор бита показывает
    * «Загрузка…», а не «Бит не найден». */
   beatsLoaded: boolean
+  /** Правки песни, паттерна песни или бита библиотеки, ещё не сохранённые
+   * дискетой (решение пользователя — защита от случайной правки). Живут,
+   * пока открыта страница; уходят с неё — «Сохранить / Не сохранять /
+   * Остаться» (app.ts). Играет движок именно их. */
+  draft: EditDraft | null
+  /** Замок в шапке открыт (долгий тап). Свой у каждой страницы: при входе
+   * на страницу — снова закрыт (решение пользователя). */
+  unlocked: boolean
 }
 
 type Listener = (state: AppState) => void
@@ -102,6 +111,8 @@ const state: AppState = {
   beats: [],
   metronomePattern: null,
   beatsLoaded: false,
+  draft: null,
+  unlocked: false,
 }
 
 // Библиотека аккаунта (data/userLibrary.ts) — открыта, пока пользователь
@@ -300,4 +311,66 @@ export function setVoiceCues(value: boolean): void {
   state.voiceCues = value
   writeStored('metronom_voice_cues', String(value))
   notify()
+}
+
+// --- черновик правок и замок страницы ---
+
+const storedSong = (id: number) => state.songs.find((s) => s.id === id)
+const storedBeat = (id: string) => state.beats.find((b) => b.id === id)
+
+/** Песня, как её видит страница: с несохранёнными правками, если они есть.
+ * Песню удалили (в том числе с другого устройства) — её нет и с правками. */
+export function songView(id: number): Song | undefined {
+  const stored = storedSong(id)
+  const draft = state.draft
+  return stored && draft?.kind === 'song' && draft.song.id === id ? draft.song : stored
+}
+
+export function beatView(id: string): Beat | undefined {
+  const stored = storedBeat(id)
+  const draft = state.draft
+  return stored && draft?.kind === 'beat' && draft.beat.id === id ? draft.beat : stored
+}
+
+export function setDraft(draft: EditDraft): void {
+  state.draft = draft
+  notify()
+}
+
+/** Есть что сохранять: правки отличаются от сохранённого (вернули как было —
+ * сохранять нечего). Сохранённое удалено — сохранять некуда. */
+export function draftDirty(): boolean {
+  const draft = state.draft
+  if (!draft) return false
+  const stored = draft.kind === 'song' ? storedSong(draft.song.id) : storedBeat(draft.beat.id)
+  const edited = draft.kind === 'song' ? draft.song : draft.beat
+  return !!stored && stableStringify(stored) !== stableStringify(edited)
+}
+
+/** Дискета: правки — в аккаунт. */
+export function commitDraft(): void {
+  const draft = state.draft
+  if (draft && draftDirty()) {
+    if (draft.kind === 'song') saveSongs(state.songs.map((s) => (s.id === draft.song.id ? draft.song : s)))
+    else saveBeats(state.beats.map((b) => (b.id === draft.beat.id ? draft.beat : b)))
+  }
+  state.draft = null
+  notify()
+}
+
+export function discardDraft(): void {
+  state.draft = null
+  notify()
+}
+
+export function setUnlocked(unlocked: boolean): void {
+  state.unlocked = unlocked
+  notify()
+}
+
+/** Новая страница: правок нет, замок закрыт. Без уведомления — страница
+ * сейчас перерисуется сама. */
+export function resetPageEditing(): void {
+  state.draft = null
+  state.unlocked = false
 }

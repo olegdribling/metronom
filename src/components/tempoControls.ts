@@ -21,6 +21,8 @@ export interface TempoFieldOptions {
   rerender(): void
   buttonClass: string
   inputClass: string
+  /** Закрыт замок страницы — число видно, но не правится. */
+  disabled?: () => boolean
 }
 
 export interface TempoField {
@@ -50,8 +52,9 @@ export function createTempoField(opts: TempoFieldOptions): TempoField {
 
   return {
     render() {
+      if (opts.disabled?.()) draft = null
       if (draft === null) {
-        return h('button', { type: 'button', className: opts.buttonClass, onClick: open }, String(opts.get()))
+        return h('button', { type: 'button', className: opts.buttonClass, onClick: open, disabled: !!opts.disabled?.() }, String(opts.get()))
       }
       return h('input', {
         type: 'text',
@@ -85,6 +88,8 @@ export interface MeterFieldOptions {
   /** Панель под бейджем — по центру (кольцо) или к правому краю (строка
    * темпа песни у края экрана). */
   align?: 'center' | 'end'
+  /** Закрыт замок страницы — бейдж только показывает размер. */
+  disabled?: () => boolean
 }
 
 export interface MeterField {
@@ -113,6 +118,10 @@ export function createMeterField(opts: MeterFieldOptions): MeterField {
   return {
     render() {
       const meter = opts.get()
+      if (opts.disabled?.()) {
+        open = false
+        return h('div', { className: 'dial__meter-anchor' }, h('span', { className: 'dial__meter dial__meter--fixed' }, `${meter.beatsPerBar}/${meter.beatDivision}`))
+      }
       const badge = h(
         'button',
         { type: 'button', className: 'dial__meter', onClick: () => toggle(!open) },

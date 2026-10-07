@@ -9,11 +9,16 @@ interface Route {
   handler: RouteHandler
 }
 
+/** Перед уходом со страницы: true — переход задержан (proceed() выполнит
+ * его позже, или его не будет). Несохранённые правки — app.ts. */
+export type RouteGuard = (proceed: () => void) => boolean
+
 export interface Router {
   on(path: string, handler: RouteHandler): void
   notFoundHandler(handler: RouteHandler): void
   navigate(path: string): void
   resolve(): void
+  setGuard(guard: RouteGuard): void
 }
 
 function compile(path: string): { pattern: RegExp; keys: string[] } {
@@ -34,6 +39,12 @@ function compile(path: string): { pattern: RegExp; keys: string[] } {
 export function createRouter(): Router {
   const routes: Route[] = []
   let notFound: RouteHandler = () => {}
+  let guard: RouteGuard | null = null
+  // Путь открытой страницы и номер её записи в истории — чтобы вернуться
+  // на неё, если «назад»/«вперёд» браузера задержали.
+  let current = location.pathname
+  let index = 0
+  history.replaceState({ index }, '')
 
   function on(path: string, handler: RouteHandler) {
     const { pattern, keys } = compile(path)
@@ -42,6 +53,7 @@ export function createRouter(): Router {
 
   function resolve() {
     const path = location.pathname
+    current = path
     for (const route of routes) {
       const match = route.pattern.exec(path)
       if (match) {
@@ -60,16 +72,32 @@ export function createRouter(): Router {
     notFound({})
   }
 
-  function navigate(path: string) {
-    if (location.pathname === path) {
-      resolve()
-      return
-    }
-    history.pushState({}, '', path)
+  function go(path: string) {
+    if (location.pathname !== path) history.pushState({ index: ++index }, '', path)
     resolve()
   }
 
-  window.addEventListener('popstate', resolve)
+  function navigate(path: string) {
+    if (guard?.(() => go(path))) return
+    go(path)
+  }
 
-  return { on, notFoundHandler: (handler) => (notFound = handler), navigate, resolve }
+  // «Назад»/«вперёд» браузера: адрес уже сменился. Переход задержан —
+  // история возвращается на запись страницы (её popstate — тот же путь,
+  // ничего не делает), согласились уйти — снова туда, куда шли.
+  window.addEventListener('popstate', (e) => {
+    const path = location.pathname
+    const from = index
+    const to = typeof e.state?.index === 'number' ? e.state.index : 0
+    index = to
+    if (path === current) return
+    // Запись без номера (из истории до перезагрузки) — go(0) перезагрузил
+    // бы страницу: тогда страница встаёт новой записью.
+    const back = () => (to !== from ? history.go(from - to) : history.pushState({ index: ++index }, '', current))
+    const proceed = () => (to !== from ? history.go(to - from) : (history.replaceState({ index }, '', path), resolve()))
+    if (guard?.(proceed)) back()
+    else resolve()
+  })
+
+  return { on, notFoundHandler: (handler) => (notFound = handler), navigate, resolve, setGuard: (g) => (guard = g) }
 }

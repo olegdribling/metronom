@@ -20,6 +20,10 @@
 // прокрутка ленты и захват указателя (setPointerCapture) посреди выделения.
 // Сами правки сетка не сохраняет — отдаёт новый бит через onEdit(), экран
 // сохраняет и возвращает его обратно через update().
+//
+// Закрытый замок страницы (setLocked) — сетку можно смотреть, листать и
+// слушать иконки строк, но не править: клетки не нажимаются, кнопки
+// добавления и удаления неактивны.
 import { h } from '../dom.ts'
 import { icon } from '../icons.ts'
 import { drumIcon } from './drumIcons.ts'
@@ -70,6 +74,8 @@ export interface BeatGrid {
   update(beat: Beat): void
   /** Подсветка играющего шага — горячий путь, напрямую в DOM. */
   setPlayhead(step: number | null): void
+  /** Закрыт замок страницы — только смотреть. */
+  setLocked(locked: boolean): void
   scrollToStart(): void
   destroy(): void
 }
@@ -178,6 +184,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
   let pendingReveal: Region | null = null
   // Столбец активной клетки, который уже показали прокруткой (см. update()).
   let revealedColumn = -1
+  let locked = false
 
   const rolesEl = h('div', { className: 'beat-grid__roles' })
   const selectionEl = h('div', { className: 'beat-grid__selection', hidden: true })
@@ -252,7 +259,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
               type: 'button',
               className: 'beat-grid__remove',
               'aria-label': `Удалить шаг ${c + 1}`,
-              disabled: b.steps <= 1,
+              disabled: locked || b.steps <= 1,
               onClick: () => removeColumn(c),
             },
             icon('trash')
@@ -297,7 +304,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
           className: 'beat-grid__role beat-grid__role--add',
           'aria-label': 'Добавить инструмент',
           title: b.tracks.length >= DRUM_ROLES.length ? 'Все инструменты уже добавлены' : 'Добавить инструмент',
-          disabled: b.tracks.length >= DRUM_ROLES.length,
+          disabled: locked || b.tracks.length >= DRUM_ROLES.length,
           onClick: () => opts.onAddRow(),
         },
         icon('plus')
@@ -314,6 +321,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
               type: 'button',
               className: 'beat-grid__remove',
               'aria-label': `Удалить ${DRUM_ROLE_LABELS[track.role]}`,
+              disabled: locked,
               onClick: () => removeRow(r),
             },
             icon('trash')
@@ -626,7 +634,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
 
   surface.addEventListener('pointerdown', (e) => {
     const target = e.target as Element
-    if (!e.isPrimary || e.button !== 0 || drag || !target.closest('[data-cell]')) return
+    if (locked || !e.isPrimary || e.button !== 0 || drag || !target.closest('[data-cell]')) return
     suppressClick = false
     const touch = e.pointerType === 'touch'
     isTouch = touch
@@ -682,7 +690,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
   // указателем тап уже обработан в pointerup, а click после него глушится.
   surface.addEventListener('click', (e) => {
     const cellEl = (e.target as Element).closest<HTMLElement>('[data-cell]')
-    if (!cellEl) return
+    if (!cellEl || locked) return
     if (suppressClick) {
       suppressClick = false
       return
@@ -712,6 +720,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
   surface.addEventListener('touchstart', onTouchStart, { passive: true })
 
   surface.addEventListener('keydown', (e) => {
+    if (locked) return
     if (e.key === 'Escape') {
       e.preventDefault()
       cancel()
@@ -756,7 +765,7 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
       active = { column: clamp(active.column, 0, next.steps - 1), row: clamp(active.row, 0, Math.max(0, rows() - 1)) }
       el.style.setProperty('--beat-grid-rows', String(rows()))
       countEl.textContent = String(next.steps)
-      addColumnButton.disabled = next.steps >= BEAT_MAX_STEPS
+      addColumnButton.disabled = locked || next.steps >= BEAT_MAX_STEPS
       addColumnButton.title = next.steps >= BEAT_MAX_STEPS ? `Предел — ${BEAT_MAX_STEPS} шагов` : 'Добавить шаг'
       renderColumns()
       renderOverlay()
@@ -777,6 +786,22 @@ export function createBeatGrid(opts: BeatGridOptions): BeatGrid {
       if (playhead !== null) columnEls[playhead]?.classList.remove('beat-grid__col--playing')
       playhead = step
       if (step !== null) columnEls[step]?.classList.add('beat-grid__col--playing')
+    },
+    setLocked(next) {
+      if (next === locked) return
+      locked = next
+      el.classList.toggle('beat-grid--locked', locked)
+      if (!beat) return
+      if (locked) {
+        clearLongPress()
+        drag = null
+        setDragging(false)
+        resetSelection()
+      }
+      addColumnButton.disabled = locked || beat.steps >= BEAT_MAX_STEPS
+      renderRows()
+      renderColumns()
+      renderOverlay()
     },
     scrollToStart() {
       viewport.scrollLeft = 0

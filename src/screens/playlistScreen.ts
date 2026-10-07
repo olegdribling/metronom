@@ -115,6 +115,7 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
                   ariaLabel: `Удалить песню «${song.name}»`,
                   confirmText: `Удалить песню «${song.name}»? Это нельзя отменить.`,
                   onDelete: () => saveSongs(getState().songs.filter((s) => s.id !== song.id)),
+                  disabled: !getState().unlocked,
                 }
               )
             )

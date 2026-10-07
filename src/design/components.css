@@ -9,6 +9,8 @@
    .icon-btn           — круглая кнопка только с иконкой (транспорт, футер);
                          --current — текущий раздел в футере, --transport —
                          большая Play/Stop, --pair — две иконки (таблетка)
+   .lock-btn           — замок в шапке (components/lockButton.ts); --open — открыт
+   .dialog             — окно поверх приложения («Изменения не сохранены»)
    .card               — карточка (секция песни, панель настроек)
    .card--active       — карточка текущей воспроизводимой секции
    .card--inset        — карточка внутри карточки (выбор филла в секции)
@@ -47,7 +49,8 @@
    .settings-list      — карточка-список настроек (__title — заголовок)
    .playlist-title     — название открытого плейлиста
    .checkbox-row       — строка «галочка + подпись»
-   .app-header         — шапка экрана (__title, --center — по центру)
+   .app-header         — шапка экрана (__title, --center — по центру; __actions —
+                         кнопки справа: замок, дискета)
    .app-footer         — нижняя панель транспорта/навигации
 
    Раскладка и текст — вместо инлайн-стилей в экранах:
@@ -134,6 +137,27 @@
 }
 .icon-btn--danger:hover { background: var(--color-danger); opacity: 0.9; }
 
+/* Замок: открывается долгим тапом — без выделения текста и меню на
+   телефоне. Открытый — акцентная рамка, как текущий раздел в футере. */
+.lock-btn {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.lock-btn--open { border-color: var(--color-border-accent); }
+
+.dialog {
+  width: min(320px, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+
 .card {
   padding: var(--space-3);
   border-radius: var(--radius-lg);
@@ -177,6 +201,9 @@
   cursor: pointer;
 }
 .list-row:hover { background: var(--color-surface); }
+/* Значение под закрытым замком (кит бита) — видно, но не открывается. */
+.list-row:disabled { color: var(--color-text); cursor: default; }
+.list-row:disabled:hover { background: var(--color-bg); }
 .list-item {
   display: flex;
   align-items: center;
@@ -312,6 +339,9 @@
   background: var(--color-accent);
   border-color: var(--color-accent);
 }
+/* Под закрытым замком (выбор размера бита) — не нажимается. */
+.dial__meter:disabled { cursor: default; }
+.dial__meter:disabled:not(.dial__meter--active) { opacity: 0.5; }
 .dial__meter-anchor { position: relative; }
 /* Размер, который сейчас не правится (метроном играет свой паттерн). */
 .dial__meter--fixed {
@@ -381,6 +411,8 @@
   font-weight: var(--font-weight-bold);
   cursor: pointer;
 }
+/* Под закрытым замком темп виден, но не правится. */
+.tempo-button:disabled { color: var(--color-text); cursor: default; }
 
 /* Сетка редактора бита — components/beatGrid.ts. Геометрия как у референса
    (realdrummetronome.com/editor): столбец 44px (клетка 40 + поля по 2),
@@ -489,6 +521,8 @@
   background: var(--color-surface);
   cursor: pointer;
 }
+/* Закрытый замок страницы — клетки только показывают. */
+.beat-grid--locked .beat-grid__cell { cursor: default; }
 /* Чередование долей (группа = beatDivision шагов). */
 .beat-grid__cell--alt { background: var(--color-border); }
 .beat-grid__cell--on {
@@ -672,6 +706,8 @@
    --current), отметка должна быть видна и поверх неё. */
 .bar-grid__cell--fill { box-shadow: inset 0 -4px 0 var(--color-bar-grid-fill); }
 .bar-grid__cell--fill-start { box-shadow: inset 0 -4px 0 var(--color-bar-grid-fill), inset 3px 0 0 var(--color-bar-grid-fill); }
+/* Под закрытым замком доли видны (и закраска игры), но филл не выбрать. */
+.bar-grid__cell:disabled { cursor: default; }
 .bar-grid__cell--picked { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
 
 .switch {
@@ -726,6 +762,17 @@
   white-space: nowrap;
 }
 .app-header__title--center { text-align: center; }
+.app-header__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+/* Заголовок ровно по центру: края — равные колонки. */
+.app-header--center {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  gap: var(--space-2);
+}
 
 .app-footer {
   flex-shrink: 0;

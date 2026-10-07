@@ -18,6 +18,12 @@
 // (бит на N/M занимает N долей, доли под ним отмечены). В песне хранятся
 // только ссылки (beatId), паттерны подставляет app.ts для движка.
 //
+// Правки — черновиком (state.draft): в аккаунт — только дискетой в шапке,
+// уход без неё — вопрос (app.ts). Замок в шапке закрыт — темп, размер,
+// секции и филлы только показываются, играть можно (решение пользователя).
+// Новые биты (филл «Редактировать», копия квадратика) уходят в библиотеку
+// сразу — в песне до дискеты только ссылка на них.
+//
 // Секции везде — по id, не по индексу: индексы сдвигаются при удалении,
 // перетаскивании и правке с другого устройства, и открытая форма правки
 // иначе сохранялась бы в соседнюю секцию.
@@ -29,7 +35,7 @@ import { icon } from '../icons.ts'
 import { CONFIG, SECTION_TYPES } from '../config.ts'
 import { Beat, PlaybackState, Section, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveSongs, saveBeats } from '../state/appState.ts'
+import { getState, subscribe, saveBeats, setDraft, songView } from '../state/appState.ts'
 import {
   beatLengthInBeats,
   clampBars,
@@ -72,8 +78,10 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   let focusPending = opts.focusSectionId
 
   function currentSong(): Song | undefined {
-    return getState().songs.find((s) => s.id === songId)
+    return songView(songId)
   }
+
+  const locked = () => !getState().unlocked
 
   function beatById(id: string | undefined): Beat | undefined {
     return id ? getState().beats.find((b) => b.id === id) : undefined
@@ -88,7 +96,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   }
 
   function updateSong(patch: Partial<Song>) {
-    saveSongs(getState().songs.map((s) => (s.id === songId ? { ...s, ...patch } : s)))
+    const song = currentSong()
+    if (song) setDraft({ kind: 'song', song: { ...song, ...patch } })
   }
 
   // --- темп и размер песни ---
@@ -100,26 +109,28 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     rerender: () => render(),
     buttonClass: 'tempo-button',
     inputClass: 'input tempo-input',
+    disabled: locked,
   })
   const meterField = createMeterField({
     get: () => songMeter(currentSong()!),
     // Размер меняет число долей в секциях — филлы за новым концом уходят.
     set: (meter) => {
       const song = currentSong()
-      if (song) saveSongs(getState().songs.map((s) => (s.id === songId ? withSongMeter(song, meter) : s)))
+      if (song) setDraft({ kind: 'song', song: withSongMeter(song, meter) })
     },
     rerender: () => render(),
     align: 'end',
+    disabled: locked,
   })
 
   function tempoRow(song: Song): HTMLElement {
     return h(
       'div',
       { className: 'card row' },
-      iconButton('minus', { onClick: () => setSongBpm(song.bpm - 1), ariaLabel: 'Темп: меньше' }),
+      iconButton('minus', { onClick: () => setSongBpm(song.bpm - 1), ariaLabel: 'Темп: меньше', disabled: locked() }),
       tempo.render(),
       h('span', { className: 'text-small text-sub' }, 'BPM'),
-      iconButton('plus', { onClick: () => setSongBpm(song.bpm + 1), ariaLabel: 'Темп: больше' }),
+      iconButton('plus', { onClick: () => setSongBpm(song.bpm + 1), ariaLabel: 'Темп: больше', disabled: locked() }),
       h('div', { className: 'push-right' }, meterField.render())
     )
   }
@@ -358,6 +369,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
           (fillPicker?.sectionId === sec.id && fillPicker.at === i ? ' bar-grid__cell--picked' : ''),
         'aria-label': `Доля ${i + 1} — филл`,
         dataset: { beat: String(firstBar * beatsPerBar + i) },
+        disabled: locked(),
         onClick: () => {
           const same = fillPicker?.sectionId === sec.id && fillPicker.at === i
           fillPicker = same ? null : { sectionId: sec.id, at: i, list: false }
@@ -424,7 +436,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       'div',
       {
         className: 'card',
-        draggable: !sec.intro,
+        draggable: !sec.intro && !locked(),
         dataset: { sectionId: sec.id },
         onDragStart: () => (dragFrom = sec.intro ? null : index),
         onDragOver: (e: DragEvent) => e.preventDefault(),
@@ -446,8 +458,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
               'div',
               { className: 'row row--1 push-right' },
               iconButton('play', { onClick: () => playFrom(firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
-              iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию' }),
-              iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию' })
+              iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию', disabled: locked() }),
+              iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию', disabled: locked() })
             )
       ),
       sec.comment ? h('div', { className: 'mt-2 text-bold' }, sec.comment) : null,
@@ -488,6 +500,12 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     // переезжают на соседнюю.
     if (editingId !== null && !song.sections.some((s) => s.id === editingId)) editingId = null
     if (fillPicker && !song.sections.some((s) => s.id === fillPicker!.sectionId)) fillPicker = null
+    // Замок закрыли — открытые формы и выбор филла закрываются.
+    if (locked()) {
+      editingId = null
+      fillPicker = null
+      showAddForm = false
+    }
 
     let firstBar = 0
     sectionCards = song.sections.map((sec, i) => {
@@ -509,6 +527,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
             })
           : button('Добавить секцию', {
               iconName: 'plus',
+              disabled: locked(),
               onClick: () => {
                 showAddForm = true
                 editingId = null

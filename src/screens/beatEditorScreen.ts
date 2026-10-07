@@ -14,7 +14,13 @@
 //
 // Название не редактируется вживую — только через «Сохранить» (запрашивает
 // имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
-// У паттерна песни имени нет — нет и «Сохранить». Своей кнопки плей в
+// У паттерна песни имени нет — дискета просто сохраняет.
+//
+// Бит библиотеки и паттерн песни правятся черновиком (state.draft): в
+// аккаунт — только дискетой в шапке, уход без неё — вопрос (app.ts).
+// У бита библиотеки ещё и замок (решение пользователя): закрыт — сетка,
+// кит и темп только показываются. Свой паттерн метронома — как раньше,
+// каждая правка сразу в аккаунт. Своей кнопки плей в
 // редакторе нет — играть через общий транспорт в футере: на этой странице он
 // играет бит по кругу (app.ts берёт его из состояния — каждая правка сразу
 // слышна) в его темпе: у бита свой (beat.bpm), у паттерна — темп песни.
@@ -27,7 +33,7 @@ import { icon } from '../icons.ts'
 import { CONFIG, DRUM_ROLES, DRUM_ROLE_LABELS, DRUM_KITS } from '../config.ts'
 import { Beat, DrumRole, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats, saveMetronomePattern, saveSongs, setMetronome } from '../state/appState.ts'
+import { beatView, commitDraft, getState, subscribe, saveMetronomePattern, setDraft, setMetronome, songView } from '../state/appState.ts'
 import { emptyMetronomePattern } from '../data/beatsLibrary.ts'
 import { clampBpm } from '../data/songs.ts'
 import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
@@ -46,12 +52,15 @@ export interface BeatEditorTarget {
   /** «Загрузить из моих битов» — копия бита из библиотеки вместо того, что в
    * редакторе (свой паттерн метронома). */
   loadFromLibrary?: boolean
+  /** Замок в шапке (бит библиотеки): закрыт — только смотреть. */
+  lockable?: boolean
 }
 
 // Бит из библиотеки «Биты»: свой темп, название — через «Сохранить».
+// Правки — в черновик, в аккаунт — дискетой.
 export function libraryBeatTarget(beatId: string): BeatEditorTarget {
-  const get = () => getState().beats.find((b) => b.id === beatId)
-  const save = (beat: Beat) => saveBeats(getState().beats.map((b) => (b.id === beatId ? beat : b)))
+  const get = () => beatView(beatId)
+  const save = (beat: Beat) => setDraft({ kind: 'beat', beat })
   return {
     get,
     save,
@@ -65,13 +74,18 @@ export function libraryBeatTarget(beatId: string): BeatEditorTarget {
         if (beat) save({ ...beat, bpm: clampBpm(bpm) })
       },
     },
+    lockable: true,
   }
 }
 
 // Паттерн песни: темп — песни (правка меняет темп песни), имени нет.
+// Правки — в черновик песни, в аккаунт — дискетой.
 export function songPatternTarget(songId: number): BeatEditorTarget {
-  const song = () => getState().songs.find((s) => s.id === songId)
-  const update = (patch: Partial<Song>) => saveSongs(getState().songs.map((s) => (s.id === songId ? { ...s, ...patch } : s)))
+  const song = () => songView(songId)
+  const update = (patch: Partial<Song>) => {
+    const current = song()
+    if (current) setDraft({ kind: 'song', song: { ...current, ...patch } })
+  }
   return {
     get: () => song()?.pattern,
     save: (pattern) => update({ pattern }),
@@ -119,6 +133,7 @@ export function mountBeatEditorScreen(
   let showLibrary = false
 
   const currentBeat = () => target.get()
+  const locked = () => !!target.lockable && !getState().unlocked
 
   // Сохранение перерисует экран по подписке, а app.ts отдаст новую версию
   // движку.
@@ -148,6 +163,7 @@ export function mountBeatEditorScreen(
             // .dial__meter — тот же бейдж «N/M», что у кольца метронома.
             className: `dial__meter${active ? ' dial__meter--active' : ''}`,
             'aria-pressed': String(active),
+            disabled: locked(),
             onClick: () => setMeter(o),
           },
           `${o.beatsPerBar}/${o.beatDivision}`
@@ -177,6 +193,7 @@ export function mountBeatEditorScreen(
     rerender: () => render(),
     buttonClass: 'tempo-button',
     inputClass: 'input tempo-input',
+    disabled: locked,
   })
 
   // --- строки-инструменты ---
@@ -216,6 +233,7 @@ export function mountBeatEditorScreen(
     const beat = currentBeat()
     showSaveDialog = false
     if (beat) updateBeat({ name: nameDraft.trim().slice(0, CONFIG.MAX_NAME_LENGTH) || beat.name })
+    commitDraft()
     saving?.onDone()
   }
 
@@ -303,7 +321,7 @@ export function mountBeatEditorScreen(
     const kit = DRUM_KITS.find((k) => k.id === beat.kitId) ?? DRUM_KITS[0]
     const kitButton = h(
       'button',
-      { type: 'button', className: 'list-row', onClick: () => { showKitPicker = !showKitPicker; render() } },
+      { type: 'button', className: 'list-row', disabled: locked(), onClick: () => { showKitPicker = !showKitPicker; render() } },
       h('span', { className: 'text-sub' }, 'Sound'),
       h('span', { className: 'grow text-right text-bold' }, kit.name)
     )
@@ -348,8 +366,11 @@ export function mountBeatEditorScreen(
       return
     }
     if (!layout.isConnected) mount(container, layout)
+    // Замок закрыли — открытые выборы закрываются.
+    if (locked()) showAddRole = showKitPicker = false
     mount(aboveGrid, renderMeterChoice(beat))
     aboveGrid.hidden = !aboveGrid.firstChild
+    grid.setLocked(locked())
     grid.update(beat)
     mount(
       belowGrid,

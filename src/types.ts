@@ -185,6 +185,11 @@ export type PlaybackSource =
   | { kind: 'metronomePattern' }
   | { kind: 'beat'; beatId: string }
 
+/** Несохранённые правки страницы (решение пользователя: песня, паттерн
+ * песни и бит библиотеки сохраняются только дискетой в шапке). Песня —
+ * целиком (паттерн песни — её часть), бит — целиком. */
+export type EditDraft = { kind: 'song'; song: Song } | { kind: 'beat'; beat: Beat }
+
 export interface SectionFormData {
   name: string
   bars: number
