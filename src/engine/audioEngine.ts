@@ -394,7 +394,11 @@ export function createAudioEngine(): AudioEngine {
           if (loopIndefinitely) {
             bar = 0
           } else {
-            visualQueue.push({ time: scheduledTime + 0.001, type: 'stop' })
+            // Конец песни — в конце последней доли (nextNoteTime уже сдвинут
+            // на неё), а не в её начале: иначе экраны теряли последнюю долю
+            // (подсветка, «Концерт» открывал следующую песню на долю раньше),
+            // а Стоп по концу глушил её удары внутри доли.
+            visualQueue.push({ time: nextNoteTime, type: 'stop' })
             return
           }
         }
@@ -419,8 +423,10 @@ export function createAudioEngine(): AudioEngine {
         if (event.type === 'stop') {
           // Песня кончилась — как stop(): сначала isPlaying = false, потом
           // сброс. Экраны на сброс смотрят на engine.isPlaying, и в обратном
-          // порядке принимали его за «играет, такт 0, доля 1».
-          stop()
+          // порядке принимали его за «играет, такт 0, доля 1». Но без
+          // глушения: всё уже прозвучало, хвосты (тарелка на последней доле)
+          // дозвучивают — глушит только Стоп.
+          halt(false)
           return
         }
         if (event.type === 'tick') {
@@ -469,6 +475,12 @@ export function createAudioEngine(): AudioEngine {
   }
 
   function stop() {
+    halt(true)
+  }
+
+  // silence — Стоп (кнопкой, сменой страницы): заглушить и то, что уже
+  // отдано звуковой карте наперёд. Конец песни — без этого.
+  function halt(silence: boolean) {
     runId++
     setIsPlaying(false)
     if (timer) {
@@ -480,7 +492,7 @@ export function createAudioEngine(): AudioEngine {
       visualRaf = null
     }
     visualQueue = []
-    silenceScheduled()
+    if (silence) silenceScheduled()
     resetPlaybackState()
   }
 

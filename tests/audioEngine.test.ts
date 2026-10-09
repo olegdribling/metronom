@@ -330,6 +330,26 @@ test('Стоп сразу глушит уже запланированные у�
   assert.ok(ahead.every((p) => p.silenced), 'после Стоп запланированные удары не должны прозвучать')
 })
 
+test('песня доигрывает последнюю долю: конец — в её конце, удары внутри неё не глушатся', async (t) => {
+  const { engine, advance, played } = setup(t, { samples: true })
+  await settle()
+  // 1 такт, хэт на каждую восьмую: у последней доли второй удар — на её середине.
+  engine.setSong(makeSong({ pattern: pattern('real_hihat', [true, true]) }))
+  engine.setBpm(600) // доля = 100 мс: доли в 0,1 / 0,2 / 0,3 / 0,4 с, конец — 0,5 с
+  await engine.start()
+  advance(470)
+  assert.equal(engine.isPlaying, true, 'последняя доля ещё идёт — песня не кончилась')
+  assert.equal(engine.playbackState.beat, 4, 'экраны видят последнюю долю')
+  advance(80)
+  assert.equal(engine.isPlaying, false, 'после конца последней доли — остановилась')
+  assert.deepEqual(
+    played.map((p) => Math.round(p.time * 1000)),
+    [100, 150, 200, 250, 300, 350, 400, 450],
+    'все удары песни, включая второй удар последней доли'
+  )
+  assert.ok(played.every((p) => !p.silenced), 'конец песни ничего не глушит — дозвучивает')
+})
+
 test('старт с секции: 2 такта отсчёта (голос + щелчок на каждую долю), потом сама секция', async (t) => {
   const { engine, advance, played } = setup(t, { samples: true })
   await settle()
