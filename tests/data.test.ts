@@ -4,7 +4,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
-import { clampBars, createEmptySong, emptySongPattern, normalizeSong, pruneFills, sliceForBeat, squareContent, withSongMeter } from '../src/data/songs.ts'
+import {
+  clampBars,
+  concertStart,
+  createEmptySong,
+  emptySongPattern,
+  fillBeats,
+  normalizeSong,
+  pruneFills,
+  sectionAtBar,
+  sliceForBeat,
+  squareContent,
+  withSongMeter,
+} from '../src/data/songs.ts'
 import { engineSettingsFor, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
 import { stableStringify } from '../src/data/docSync.ts'
@@ -281,4 +293,35 @@ test('скорость своего паттерна ×2 и ×½ — щелчк�
   const half = play(0.5).pattern
   assert.deepEqual([half.steps, half.stepsPerBeat], [6, 3], '×½ — клетка растянута на два шага')
   assert.deepEqual(half.tracks[0].steps, [true, false, false, false, true, false])
+})
+
+test('концерт: голос смены секции всегда, остальное — как у песни', () => {
+  const song: Song = { ...createEmptySong('s'), bpm: 95, beatsPerBar: 3, beatDivision: 2 }
+  const inputs = { metronome, metronomePattern: null, songs: [song], beats: [], voiceCues: false }
+  const concert = engineSettingsFor({ kind: 'concert', songId: song.id }, inputs)!
+  assert.deepEqual([concert.bpm, concert.beatsPerBar, concert.beatDivision, concert.voiceCount], [95, 3, 2, false])
+  assert.equal(concert.voiceCues, true, 'на сцене — всегда, даже если в настройках выключен')
+  assert.equal(engineSettingsFor({ kind: 'song', songId: song.id }, inputs)!.voiceCues, false, 'в песне — по настройке')
+  assert.equal(engineSettingsFor({ kind: 'concert', songId: 404 }, inputs), null)
+  assert.equal(sameSource({ kind: 'concert', songId: 1 }, { kind: 'song', songId: 1 }), false, 'другой звук — другой источник')
+})
+
+test('концерт: старт с первой настоящей секции, вступление пропускается', () => {
+  const sec = (id: string, bars: number, intro = false) => ({ id, name: id, bars, comment: '', intro })
+  const song: Song = { ...createEmptySong('s'), sections: [sec('intro', 2, true), sec('v', 4), sec('c', 8)] }
+  assert.deepEqual(concertStart(song), { sectionIndex: 1, fromBar: 2 })
+  assert.deepEqual(concertStart({ ...song, sections: [sec('intro', 2, true)] }), { sectionIndex: 0, fromBar: 0 }, 'только вступление — с начала')
+  assert.deepEqual(concertStart({ ...song, sections: [sec('v', 4), sec('c', 8)] }), { sectionIndex: 0, fromBar: 0 })
+
+  assert.deepEqual(sectionAtBar(song, 0), { sectionIndex: 0, barInSection: 1 })
+  assert.deepEqual(sectionAtBar(song, 2), { sectionIndex: 1, barInSection: 1 })
+  assert.deepEqual(sectionAtBar(song, 5), { sectionIndex: 1, barInSection: 4 })
+  assert.deepEqual(sectionAtBar(song, 13), { sectionIndex: 2, barInSection: 8 })
+  assert.equal(sectionAtBar(song, 14), null, 'за концом песни')
+})
+
+test('концерт: доли под филлами — как играет движок', () => {
+  const twoBeats = beat('two', Array(8).fill(false)) // 2/4 — две доли
+  const section = { id: 'v', name: 'v', bars: 2, comment: '', intro: false, fills: [{ at: 1, beatId: 'two' }, { at: 7, beatId: 'two' }, { at: 4, beatId: 'нет' }] }
+  assert.deepEqual([...fillBeats(section, 4, [twoBeats])].sort((a, b) => a - b), [1, 2, 7], 'конец секции обрезает, удалённый бит не звучит')
 })

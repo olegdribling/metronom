@@ -1,11 +1,11 @@
 // Замок в шапке (решение пользователя — небольшая защита от случайных
 // правок): плейлист, песня, биты, бит. Закрыт — удалять, перемещать и
-// править нельзя (кнопки неактивны). Открывается долгим тапом, закрывается
-// обычным. Состояние — state.unlocked (свой у каждой страницы, app.ts).
+// править нельзя (кнопки неактивны). Открывается долгим тапом
+// (longPress.ts), закрывается обычным. Состояние — state.unlocked (свой у
+// каждой страницы, app.ts).
 import { h } from '../dom.ts'
 import { icon } from '../icons.ts'
-
-const HOLD_MS = 600
+import { onLongPress } from './longPress.ts'
 
 // Шапка пересобирается, как только замок открылся, — отпускание того же
 // пальца (сколько бы его ни держали) приходит уже новой кнопке, и её click
@@ -13,16 +13,11 @@ const HOLD_MS = 600
 let swallowClick = false
 
 export function lockButton(opts: { unlocked: boolean; onUnlock: () => void; onLock: () => void }): HTMLButtonElement {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const clear = () => {
-    if (timer !== null) clearTimeout(timer)
-    timer = null
-  }
   const el = h(
     'button',
     {
       type: 'button',
-      className: `icon-btn lock-btn${opts.unlocked ? ' lock-btn--open' : ''}`,
+      className: `icon-btn${opts.unlocked ? ' lock-btn--open' : ''}`,
       onClick: () => {
         if (swallowClick) swallowClick = false
         else if (opts.unlocked) opts.onLock()
@@ -31,22 +26,14 @@ export function lockButton(opts: { unlocked: boolean; onUnlock: () => void; onLo
     icon(opts.unlocked ? 'lock-simple-open' : 'lock-simple')
   )
   if (!opts.unlocked) {
-    el.addEventListener('pointerdown', (e) => {
-      if (!e.isPrimary) return
-      clear()
-      timer = setTimeout(() => {
-        timer = null
-        swallowClick = true
-        opts.onUnlock()
-      }, HOLD_MS)
+    onLongPress(el, () => {
+      swallowClick = true
+      opts.onUnlock()
     })
-    el.addEventListener('pointerup', clear)
-    el.addEventListener('pointerleave', clear)
-    el.addEventListener('pointercancel', clear)
   } else {
+    el.classList.add('hold-btn')
     el.addEventListener('pointerdown', () => (swallowClick = false))
+    el.addEventListener('contextmenu', (e) => e.preventDefault())
   }
-  // Долгий тап на телефоне — без меню «скопировать/открыть».
-  el.addEventListener('contextmenu', (e) => e.preventDefault())
   return el
 }

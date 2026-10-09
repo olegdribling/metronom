@@ -1,7 +1,8 @@
 // Экран плейлистов аккаунта: без входа — карточка «Войти через Google»;
 // вошёл — список «Мои плейлисты» и создание нового по имени; открытый
-// плейлист — его песни. Всё хранится в аккаунте (data/userLibrary.ts),
-// кодов и общего доступа пока нет — отложено отдельной задачей.
+// плейлист — его песни и «Концерт» (его песни для сцены, concertScreen.ts).
+// Всё хранится в аккаунте (data/userLibrary.ts), кодов и общего доступа
+// пока нет — отложено отдельной задачей.
 import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
@@ -11,7 +12,13 @@ import { CONFIG } from '../config.ts'
 import { createEmptySong } from '../data/songs.ts'
 import { getState, subscribe, saveSongs, openPlaylist, closePlaylist, createPlaylist } from '../state/appState.ts'
 
-export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId: number) => void): () => void {
+export interface PlaylistScreenOptions {
+  onOpenSong: (songId: number) => void
+  /** «Концерт» — песни плейлиста для сцены (screens/concertScreen.ts). */
+  onOpenConcert: () => void
+}
+
+export function mountPlaylistScreen(container: HTMLElement, opts: PlaylistScreenOptions): () => void {
   let newSongName = ''
   let newPlaylistName = ''
 
@@ -83,6 +90,13 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
         h('div', { className: 'grow playlist-title' }, playlist?.name ?? ''),
         button('Плейлисты', { iconName: 'list', onClick: closePlaylist })
       ),
+      // Смотреть и играть — можно и под закрытым замком.
+      button('Концерт', {
+        variant: 'accent',
+        iconName: 'microphone-stage',
+        onClick: opts.onOpenConcert,
+        disabled: state.songsLoaded && state.songs.length === 0,
+      }),
       h(
         'div',
         { className: 'card row' },
@@ -106,7 +120,7 @@ export function mountPlaylistScreen(container: HTMLElement, onOpenSong: (songId:
               deletableRow(
                 h(
                   'button',
-                  { type: 'button', className: 'list-row', onClick: () => onOpenSong(song.id) },
+                  { type: 'button', className: 'list-row', onClick: () => opts.onOpenSong(song.id) },
                   icon('music-note'),
                   h('span', { className: 'grow' }, song.name),
                   h('span', { className: 'badge' }, `${song.bpm} BPM`)

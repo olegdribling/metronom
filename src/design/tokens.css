@@ -88,6 +88,21 @@
 
   /* Тач-таргеты (Правила проектирования, п.7 — используется на сцене) */
   --touch-target-min: 44px;
+
+  /* «Концерт» (screens/concertScreen.ts) — сцена в темноте: чёрный фон,
+     белый текст, жёлтый акцент (решение пользователя). Свои у режима, от
+     темы приложения не зависят. */
+  --concert-bg: #000000;
+  --concert-surface: #161616;
+  --concert-border: #4a4a4a;
+  --concert-text: #ffffff;
+  --concert-text-sub: #a8a8a8;
+  --concert-accent: #ffd60a;
+  --concert-text-on-accent: #000000;
+  --concert-beat-passed: #5a5a5a;
+  /* Доли под филлом — отметка снизу квадратика; на жёлтой (текущей) доле —
+     тёмная. */
+  --concert-fill: #ff7a00;
 }
 
 * {

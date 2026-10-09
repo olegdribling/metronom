@@ -9,7 +9,9 @@
    .icon-btn           — круглая кнопка только с иконкой (транспорт, футер);
                          --current — текущий раздел в футере, --transport —
                          большая Play/Stop, --pair — две иконки (таблетка)
-   .lock-btn           — замок в шапке (components/lockButton.ts); --open — открыт
+   .hold-btn           — кнопка с долгим тапом (components/longPress.ts): без
+                         выделения и меню на телефоне — замок, выход из «Концерта»
+   .lock-btn--open     — открытый замок в шапке (components/lockButton.ts)
    .dialog             — окно поверх приложения («Изменения не сохранены»)
    .card               — карточка (секция песни, панель настроек)
    .card--active       — карточка текущей воспроизводимой секции
@@ -52,6 +54,9 @@
    .app-header         — шапка экрана (__title, --center — по центру; __actions —
                          кнопки справа: замок, дискета)
    .app-footer         — нижняя панель транспорта/навигации
+   .app--fullscreen    — экран без шапки и футера («Концерт»)
+   .concert            — «Концерт» (screens/concertScreen.ts): сцена в темноте —
+                         чёрный фон, крупно; __top, __main, __list, __controls
 
    Раскладка и текст — вместо инлайн-стилей в экранах:
    .stack              — колонка с отступом 12px (--1/--2/--4/--6 — другие отступы)
@@ -137,9 +142,10 @@
 }
 .icon-btn--danger:hover { background: var(--color-danger); opacity: 0.9; }
 
-/* Замок: открывается долгим тапом — без выделения текста и меню на
-   телефоне. Открытый — акцентная рамка, как текущий раздел в футере. */
-.lock-btn {
+/* Срабатывает долгим тапом (замок, выход из «Концерта») — без выделения
+   текста и меню на телефоне. Открытый замок — акцентная рамка, как текущий
+   раздел в футере. */
+.hold-btn {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -814,6 +820,282 @@
   max-width: 480px;
   margin: 0 auto;
   padding: var(--space-4);
+}
+
+/* Экран без шапки и футера («Концерт»): они остаются в #app (три div-а —
+   см. CLAUDE.md), только скрыты. */
+.app--fullscreen { background: var(--concert-bg); }
+.app--fullscreen > .app-header,
+.app--fullscreen > .app-footer { display: none; }
+.app--fullscreen > .screen {
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* «Концерт» — сцена в темноте (screens/concertScreen.ts): чёрный фон, белый
+   текст, текущее — жёлтым; всё крупно. Размеры — от меньшей стороны экрана
+   (vmin): одинаково читается и вертикально, и горизонтально.
+   Вертикально: сверху вниз __top, __main (текущая секция / название песни),
+   __list (секции дальше / вся структура), __controls. Горизонтально —
+   __list справа во всю высоту. __main может ужаться (minmax(0, max-content))
+   — кнопки внизу видны всегда. */
+.concert {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, max-content) minmax(0, 1fr) auto;
+  grid-template-areas: 'top' 'main' 'list' 'controls';
+  row-gap: var(--space-3);
+  padding:
+    calc(env(safe-area-inset-top) + var(--space-3))
+    calc(env(safe-area-inset-right) + var(--space-4))
+    calc(env(safe-area-inset-bottom) + var(--space-4))
+    calc(env(safe-area-inset-left) + var(--space-4));
+  background: var(--concert-bg);
+  color: var(--concert-text);
+  line-height: var(--line-height-heading);
+  -webkit-user-select: none;
+  user-select: none;
+}
+@media (orientation: landscape) {
+  .concert {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top top' 'main list' 'controls list';
+    column-gap: var(--space-6);
+  }
+}
+/* Выбор песни из списка — список на всё место. Остальным областям в шаблоне
+   места нет — прячем, иначе сетка заведёт для них лишние строки. */
+.concert--choosing { grid-template-areas: 'top' 'list' 'list' 'list'; }
+@media (orientation: landscape) {
+  .concert--choosing { grid-template-areas: 'top top' 'list list' 'list list'; }
+}
+.concert--choosing > .concert__main,
+.concert--choosing > .concert__controls { display: none; }
+
+.concert__top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-target-min);
+}
+.concert__exit {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--concert-border);
+  background: transparent;
+  color: var(--concert-text-sub);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+.concert__top-rest {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.concert__top-title {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--concert-text-sub);
+  font-size: clamp(1rem, 4.5vmin, 1.75rem);
+  font-weight: var(--font-weight-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.concert__main {
+  grid-area: main;
+  min-height: 0;
+  overflow-y: auto;
+}
+.concert__list {
+  grid-area: list;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* До Play: название песни и темп. */
+.concert__song {
+  margin: 0;
+  font-size: clamp(2rem, 11vmin, 5.5rem);
+  font-weight: var(--font-weight-black);
+  overflow-wrap: anywhere;
+}
+.concert__tempo {
+  margin-top: var(--space-2);
+  color: var(--concert-text-sub);
+  font-size: clamp(1.25rem, 6vmin, 2.75rem);
+  font-weight: var(--font-weight-bold);
+}
+
+/* Текущая секция во время игры — самое крупное на экране. */
+.concert__current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 3px solid var(--concert-accent);
+  border-radius: var(--radius-lg);
+  background: var(--concert-surface);
+}
+.concert__section-name {
+  font-size: clamp(2.5rem, 14vmin, 8rem);
+  font-weight: var(--font-weight-black);
+  line-height: 1;
+  color: var(--concert-accent);
+  overflow-wrap: anywhere;
+}
+.concert__comment {
+  font-size: clamp(1.25rem, 7vmin, 3.5rem);
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
+}
+.concert__bar {
+  font-size: clamp(1.25rem, 7vmin, 3.5rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--concert-text-sub);
+  font-variant-numeric: tabular-nums;
+}
+/* Доли текущего такта: прошедшие — серые, текущая — жёлтая, под филлом —
+   отметка снизу (как .bar-grid__cell--fill на экране песни). Число долей —
+   --concert-beats (выставляет concertScreen.ts). */
+.concert__beats {
+  display: grid;
+  grid-template-columns: repeat(var(--concert-beats, 4), minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.concert__beat {
+  height: clamp(36px, 12vmin, 120px);
+  border: 3px solid var(--concert-border);
+  border-radius: var(--radius-md);
+}
+.concert__beat--passed {
+  background: var(--concert-beat-passed);
+  border-color: var(--concert-beat-passed);
+}
+.concert__beat--current {
+  background: var(--concert-accent);
+  border-color: var(--concert-accent);
+}
+.concert__beat--fill { box-shadow: inset 0 -0.6rem 0 var(--concert-fill); }
+.concert__beat--current.concert__beat--fill { box-shadow: inset 0 -0.6rem 0 var(--concert-bg); }
+
+/* Секция в списке: вся структура до Play, дальше — во время игры. */
+.concert__row {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--concert-border);
+}
+.concert__row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.concert__row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1.25rem, 6.5vmin, 2.75rem);
+  font-weight: var(--font-weight-black);
+  overflow-wrap: anywhere;
+}
+.concert__row-bars {
+  flex: none;
+  color: var(--concert-text-sub);
+  font-size: clamp(1rem, 4.5vmin, 1.75rem);
+  font-weight: var(--font-weight-bold);
+}
+.concert__row-comment {
+  margin-top: var(--space-1);
+  font-size: clamp(1rem, 4.5vmin, 1.75rem);
+  overflow-wrap: anywhere;
+}
+
+/* Выбор песни: строка — кнопка; выбранная — жёлтая. */
+.concert__song-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) 0;
+  border: none;
+  border-bottom: 1px solid var(--concert-border);
+  background: transparent;
+  color: var(--concert-text);
+  text-align: left;
+  cursor: pointer;
+}
+.concert__song-row--current { color: var(--concert-accent); }
+.concert__song-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1.5rem, 7vmin, 3rem);
+  font-weight: var(--font-weight-black);
+  overflow-wrap: anywhere;
+}
+.concert__song-row-bpm {
+  flex: none;
+  color: var(--concert-text-sub);
+  font-size: clamp(1rem, 4.5vmin, 1.75rem);
+  font-weight: var(--font-weight-bold);
+}
+.concert__message {
+  font-size: clamp(1.25rem, 6vmin, 2.5rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--concert-text-sub);
+}
+
+/* Кнопки внизу: ← Play → или Стоп. Крупные — на сцене попасть пальцем. */
+.concert__controls {
+  grid-area: controls;
+  display: flex;
+  gap: var(--space-3);
+}
+.concert__btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: clamp(56px, 16vmin, 120px);
+  height: clamp(56px, 16vmin, 120px);
+  border: 2px solid var(--concert-border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--concert-text);
+  font-size: clamp(1.5rem, 7vmin, 3rem);
+  font-weight: var(--font-weight-black);
+  cursor: pointer;
+}
+.concert__btn:disabled { opacity: 0.3; cursor: default; }
+/* Play и Стоп — на всё оставшееся место. */
+.concert__btn--main {
+  flex: 1;
+  width: auto;
+  border-color: var(--concert-accent);
+  background: var(--concert-accent);
+  color: var(--concert-text-on-accent);
+}
+/* «Список» в верхней строке — поменьше; открыт — жёлтый. */
+.concert__btn--small {
+  width: auto;
+  height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  font-size: clamp(1rem, 4.5vmin, 1.5rem);
+}
+.concert__btn--on {
+  border-color: var(--concert-accent);
+  color: var(--concert-accent);
 }
 
 /* Ввод BPM в редакторе бита — вместе с .input, поэтому после него. */

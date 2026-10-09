@@ -177,10 +177,13 @@ export type PatternSpeed = 0.5 | 1 | 2
 export const PATTERN_SPEEDS: PatternSpeed[] = [0.5, 1, 2]
 
 /** Что играет страница: у метронома, песни, паттерна песни (только он, по
- * кругу) и бита — свой звук (app.ts). У списков и настроек звука нет. */
+ * кругу) и бита — свой звук (app.ts). У списков и настроек звука нет.
+ * «Концерт» — песня, но голос смены секции включён всегда (решение
+ * пользователя). */
 export type PlaybackSource =
   | { kind: 'metronome' }
   | { kind: 'song'; songId: number }
+  | { kind: 'concert'; songId: number }
   | { kind: 'songPattern'; songId: number }
   | { kind: 'metronomePattern' }
   | { kind: 'beat'; beatId: string }

@@ -88,6 +88,40 @@ export function songMeter(song: Song): Meter {
 /** Долей в секции при размере песни. */
 export const sectionBeatCount = (section: Section, beatsPerBar: number): number => section.bars * beatsPerBar
 
+/** «Концерт» (решение пользователя): Play — отсчёт и сразу первая настоящая
+ * секция, вступление «1 2 3 4» пропускается. В песне только вступление — с
+ * начала (оно играет по кругу, как на экране песни). */
+export function concertStart(song: Song): { sectionIndex: number; fromBar: number } {
+  const sectionIndex = song.sections.findIndex((s) => !s.intro)
+  if (sectionIndex < 0) return { sectionIndex: 0, fromBar: 0 }
+  return { sectionIndex, fromBar: song.sections.slice(0, sectionIndex).reduce((bars, s) => bars + s.bars, 0) }
+}
+
+/** Где песня на такте `bar` (такт от начала песни, как у движка): секция и
+ * такт внутри неё (с 1). За концом песни — null. */
+export function sectionAtBar(song: Song, bar: number): { sectionIndex: number; barInSection: number } | null {
+  let start = 0
+  for (let i = 0; i < song.sections.length; i++) {
+    const end = start + song.sections[i].bars
+    if (bar >= start && bar < end) return { sectionIndex: i, barInSection: bar - start + 1 }
+    start = end
+  }
+  return null
+}
+
+/** Доли секции под филлами (номер доли от начала секции, с 0) — как их
+ * играет движок: филл удалённого бита не звучит, конец секции обрезает. */
+export function fillBeats(section: Section, beatsPerBar: number, beats: Beat[]): Set<number> {
+  const total = sectionBeatCount(section, beatsPerBar)
+  const covered = new Set<number>()
+  for (const f of section.fills ?? []) {
+    const beat = beats.find((b) => b.id === f.beatId)
+    if (!beat) continue
+    for (let i = f.at; i < Math.min(f.at + beatLengthInBeats(beat), total); i++) covered.add(i)
+  }
+  return covered
+}
+
 /** Песня с новым размером такта (строка темпа на экране песни). Филлы за
  * новым концом секций убираются (pruneFills). */
 export function withSongMeter(song: Song, meter: Meter): Song {

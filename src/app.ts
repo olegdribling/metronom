@@ -29,6 +29,7 @@ import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
+import { mountConcertScreen } from './screens/concertScreen.ts'
 import { libraryBeatTarget, metronomePatternTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
 import { Beat, PlaybackSource, Song } from './types.ts'
 
@@ -111,11 +112,10 @@ export function startApp(root: HTMLElement): void {
     engine.setSong(songForEngine(settings.content))
   }
 
-  // Страница открылась: со своим звуком — он становится источником (другой
-  // звук, если играл, останавливается); без звука (списки, настройки) —
-  // играющее доигрывает.
-  function enterPage(source: PlaybackSource | null) {
-    resetPageEditing()
+  // Звук страницы: свой — он становится источником (другой звук, если играл,
+  // останавливается); без звука (списки, настройки) — играющее доигрывает.
+  // «Концерт» меняет его сам, не уходя со страницы, — выбрали другую песню.
+  function setPageSource(source: PlaybackSource | null) {
     pageSource = source
     if (source && !sameSource(source, activeSource)) {
       if (engine.isPlaying) engine.stop()
@@ -123,6 +123,12 @@ export function startApp(root: HTMLElement): void {
       engineContent = undefined
     }
     syncEngine()
+  }
+
+  // Страница открылась: правок нет, замок закрыт, звук — её.
+  function enterPage(source: PlaybackSource | null) {
+    resetPageEditing()
+    setPageSource(source)
   }
 
   // --- оболочка: ровно три div-а — прямые дети контейнера (root) ---
@@ -197,8 +203,11 @@ export function startApp(root: HTMLElement): void {
       lock?: boolean
       save?: { onClick: () => void; enabled: () => boolean }
       centerTitle?: boolean
+      /** Без шапки и футера («Концерт»): они остаются в DOM, только скрыты. */
+      fullscreen?: boolean
     } = {}
   ) {
+    root.classList.toggle('app--fullscreen', !!opts.fullscreen)
     routeKind = kind
     titleFn = title
     showBack = !!opts.showBack
@@ -235,7 +244,34 @@ export function startApp(root: HTMLElement): void {
   router.on('/playlist', () => {
     enterPage(null)
     setScreen('playlist', () => 'Плейлист', { lock: true })
-    mountScreen((c) => mountPlaylistScreen(c, (songId) => router.navigate(`/song/${songId}`)))
+    mountScreen((c) =>
+      mountPlaylistScreen(c, {
+        onOpenSong: (songId) => router.navigate(`/song/${songId}`),
+        onOpenConcert: () => router.navigate('/concert'),
+      })
+    )
+  })
+
+  // «Концерт» — песни открытого плейлиста для сцены, на весь экран (решение
+  // пользователя). Песню, на которой остановились, помним, пока приложение
+  // открыто: вышли и вернулись в тот же плейлист — она же.
+  let concertSong: { playlistId: string; songId: number } | null = null
+  router.on('/concert', () => {
+    const playlistId = getState().playlistId
+    const remembered = concertSong && concertSong.playlistId === playlistId ? concertSong.songId : null
+    enterPage(remembered !== null ? { kind: 'concert', songId: remembered } : null)
+    setScreen('playlist', () => 'Концерт', { fullscreen: true })
+    mountScreen((c) =>
+      mountConcertScreen(c, engine, {
+        initialSongId: remembered,
+        onSelectSong: (songId) => {
+          const current = getState().playlistId
+          if (current) concertSong = { playlistId: current, songId }
+          setPageSource({ kind: 'concert', songId })
+        },
+        onExit: () => router.navigate('/playlist'),
+      })
+    )
   })
 
   // «Редактировать» из выбора филла в песне: редактор бита открывается из

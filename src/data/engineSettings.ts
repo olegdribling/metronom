@@ -61,7 +61,7 @@ export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs):
       content: null,
     }
   }
-  if (source.kind === 'song') {
+  if (source.kind === 'song' || source.kind === 'concert') {
     const song = inputs.songs.find((s) => s.id === source.songId)
     if (!song) return null
     return {
@@ -69,7 +69,9 @@ export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs):
       beatsPerBar: song.beatsPerBar,
       beatDivision: song.beatDivision,
       voiceCount: false,
-      voiceCues: inputs.voiceCues,
+      // На сцене голос смены секции нужен всегда (решение пользователя), в
+      // песне — по настройке.
+      voiceCues: source.kind === 'concert' || inputs.voiceCues,
       content: { song, beats: inputs.beats },
     }
   }
