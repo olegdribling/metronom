@@ -914,10 +914,15 @@
   white-space: nowrap;
 }
 
+/* Колонка: не влезла (длинная секция, телефон боком) — ужимаются и
+   прокручиваются только квадратики текущей секции, название, комментарий и
+   такт остаются на виду. */
 .concert__main {
   grid-area: main;
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 .concert__list {
   grid-area: list;
@@ -941,6 +946,8 @@
 
 /* Текущая секция во время игры — самое крупное на экране. */
 .concert__current {
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -967,19 +974,25 @@
   color: var(--concert-text-sub);
   font-variant-numeric: tabular-nums;
 }
-/* Доли текущего такта: прошедшие — серые, текущая — жёлтая, под филлом —
-   отметка снизу (как .bar-grid__cell--fill на экране песни). Число долей —
-   --concert-beats (выставляет concertScreen.ts). */
+/* Доли секции — все, строками, как .bar-grid на экране песни (целыми
+   тактами, до 8 в строке — --concert-beats выставляет concertScreen.ts):
+   первая доля такта — светлая рамка, прошедшие — серые, текущая — жёлтая,
+   под филлом — отметка снизу. У текущей секции и у следующей. */
 .concert__beats {
   display: grid;
-  grid-template-columns: repeat(var(--concert-beats, 4), minmax(0, 1fr));
-  gap: var(--space-2);
-  margin-top: var(--space-1);
+  grid-template-columns: repeat(var(--concert-beats, 8), minmax(0, 1fr));
+  gap: var(--space-1);
+  margin-top: var(--space-2);
 }
 .concert__beat {
-  height: clamp(36px, 12vmin, 120px);
-  border: 3px solid var(--concert-border);
-  border-radius: var(--radius-md);
+  height: clamp(22px, 7.5vmin, 56px);
+  border: 2px solid var(--concert-border);
+  border-radius: 6px;
+}
+.concert__beat--bar-start { border-color: var(--concert-text-sub); }
+.concert__current > .concert__beats {
+  min-height: 0;
+  overflow-y: auto;
 }
 .concert__beat--passed {
   background: var(--concert-beat-passed);
@@ -989,8 +1002,8 @@
   background: var(--concert-accent);
   border-color: var(--concert-accent);
 }
-.concert__beat--fill { box-shadow: inset 0 -0.6rem 0 var(--concert-fill); }
-.concert__beat--current.concert__beat--fill { box-shadow: inset 0 -0.6rem 0 var(--concert-bg); }
+.concert__beat--fill { box-shadow: inset 0 calc(-1 * clamp(5px, 1.8vmin, 12px)) 0 var(--concert-fill); }
+.concert__beat--current.concert__beat--fill { box-shadow: inset 0 calc(-1 * clamp(5px, 1.8vmin, 12px)) 0 var(--concert-bg); }
 
 /* Секция в списке: вся структура до Play, дальше — во время игры. */
 .concert__row {

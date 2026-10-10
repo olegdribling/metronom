@@ -6,8 +6,10 @@
 // «Список» — все песни плейлиста. Play — 2 такта отсчёта и сразу первая
 // настоящая секция (вступление «1 2 3 4» пропускается, concertStart в
 // data/songs.ts). Во время игры: текущая секция крупно и жёлтым — название,
-// комментарий, «Такт N / M», доли такта (под филлом — отметка); ниже —
-// секции дальше; внизу — только Стоп. Песня доиграла — открыта следующая и
+// комментарий, «Такт N / M» и все её доли квадратиками (прошедшие серые,
+// текущая жёлтая, под филлом — отметка; строка — как на экране песни); ниже —
+// следующая секция тоже с квадратиками и остальные секции текстом (решение
+// пользователя); внизу — только Стоп. Песня доиграла — открыта следующая и
 // ждёт Play. Голос смены секции здесь всегда включён (engineSettings.ts).
 //
 // Горячий путь — как на экране песни: такт и доли обновляются напрямую в
@@ -23,7 +25,7 @@ import { onLongPress } from '../components/longPress.ts'
 import { accountGate } from '../components/signInCard.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe } from '../state/appState.ts'
-import { concertStart, fillBeats, sectionAtBar } from '../data/songs.ts'
+import { barGridColumns, concertStart, fillBeats, sectionAtBar, sectionBeatCount } from '../data/songs.ts'
 import { PlaybackState, Section, Song } from '../types.ts'
 
 const COUNT_IN_BARS = 2
@@ -110,8 +112,9 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
   let shownKey = ''
   // Живые элементы текущей секции — горячий путь.
   let barEl: HTMLElement | null = null
+  let beatsEl: HTMLElement | null = null
   let beatEls: HTMLElement[] = []
-  let currentFills = new Set<number>()
+  let shownBeat = -1
 
   const songs = () => getState().songs
 
@@ -192,7 +195,25 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
 
   // --- части экрана ---
 
-  function sectionRow(sec: Section): HTMLElement {
+  // Все доли секции квадратиками — по строкам, как на экране песни (целыми
+  // тактами, до 8 в строке): первая доля такта отмечена, доли под филлом —
+  // отметка снизу (как играет движок, fillBeats).
+  function sectionBeats(song: Song, sec: Section): { el: HTMLElement; cells: HTMLElement[] } {
+    const fills = fillBeats(sec, song.beatsPerBar)
+    const cells = Array.from({ length: sectionBeatCount(sec, song.beatsPerBar) }, (_, i) =>
+      h('div', {
+        className:
+          'concert__beat' + (i % song.beatsPerBar === 0 ? ' concert__beat--bar-start' : '') + (fills.has(i) ? ' concert__beat--fill' : ''),
+      })
+    )
+    const el = h('div', { className: 'concert__beats' }, ...cells)
+    el.style.setProperty('--concert-beats', String(barGridColumns(song.beatsPerBar)))
+    return { el, cells }
+  }
+
+  // Секция в списке: вся структура до Play, дальше — во время игры;
+  // следующая за текущей — ещё и с квадратиками (withBeats).
+  function sectionRow(song: Song, sec: Section, withBeats = false): HTMLElement {
     return h(
       'div',
       { className: 'concert__row' },
@@ -202,35 +223,54 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
         h('span', { className: 'concert__row-name' }, sec.name),
         h('span', { className: 'concert__row-bars' }, barsLabel(sec.bars))
       ),
-      sec.comment ? h('div', { className: 'concert__row-comment' }, sec.comment) : null
+      sec.comment ? h('div', { className: 'concert__row-comment' }, sec.comment) : null,
+      withBeats ? sectionBeats(song, sec).el : null
     )
   }
 
   function currentCard(song: Song, pos: Position): HTMLElement {
     const sec = song.sections[pos.sectionIndex]
-    currentFills = pos.countIn ? new Set() : fillBeats(sec, song.beatsPerBar)
     barEl = h('div', { className: 'concert__bar' })
-    beatEls = Array.from({ length: song.beatsPerBar }, () => h('div', { className: 'concert__beat' }))
-    const beats = h('div', { className: 'concert__beats' }, ...beatEls)
-    beats.style.setProperty('--concert-beats', String(song.beatsPerBar))
+    const beats = sectionBeats(song, sec)
+    beatsEl = beats.el
+    beatEls = beats.cells
+    shownBeat = -1
     return h(
       'div',
       { className: 'concert__current' },
       h('div', { className: 'concert__section-name' }, sec.name),
       sec.comment ? h('div', { className: 'concert__comment' }, sec.comment) : null,
       barEl,
-      beats
+      beats.el
     )
   }
 
-  // Такт и доли — напрямую в DOM, без перерисовки экрана.
+  // Такт и доли — напрямую в DOM, без перерисовки экрана. В отсчёте доли
+  // секции ещё не идут — в подписи номер доли отсчёта.
   function showLive(song: Song, pos: Position) {
-    if (barEl) barEl.textContent = pos.countIn ? 'Отсчёт' : `Такт ${pos.barInSection} / ${song.sections[pos.sectionIndex].bars}`
+    if (barEl) {
+      barEl.textContent = pos.countIn
+        ? pos.beat > 0 ? `Отсчёт ${pos.beat}` : 'Отсчёт'
+        : `Такт ${pos.barInSection} / ${song.sections[pos.sectionIndex].bars}`
+    }
+    const current = pos.countIn ? -1 : (pos.barInSection - 1) * song.beatsPerBar + pos.beat - 1
+    if (current === shownBeat) return
+    shownBeat = current
     beatEls.forEach((el, i) => {
-      el.classList.toggle('concert__beat--passed', i < pos.beat - 1)
-      el.classList.toggle('concert__beat--current', i === pos.beat - 1)
-      el.classList.toggle('concert__beat--fill', !pos.countIn && currentFills.has((pos.barInSection - 1) * song.beatsPerBar + i))
+      el.classList.toggle('concert__beat--passed', current >= 0 && i < current)
+      el.classList.toggle('concert__beat--current', i === current)
     })
+    if (current >= 0) revealBeat(beatEls[current])
+  }
+
+  // Длинная секция не влезла (телефон боком) — квадратики прокручиваются
+  // (components.css), и текущая доля всё равно видна: они доезжают до неё.
+  function revealBeat(el: HTMLElement | undefined) {
+    if (!el || !beatsEl) return
+    const area = beatsEl.getBoundingClientRect()
+    const box = el.getBoundingClientRect()
+    if (box.bottom > area.bottom) beatsEl.scrollTop += box.bottom - area.bottom
+    else if (box.top < area.top) beatsEl.scrollTop -= area.top - box.top
   }
 
   function listButton(): HTMLElement {
@@ -272,6 +312,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
   function render() {
     if (!frame.isConnected) mount(container, frame)
     barEl = null
+    beatsEl = null
     beatEls = []
     shownKey = ''
     const gate = accountGate('Войдите — песни и плейлисты хранятся в вашем аккаунте и видны на любом устройстве.')
@@ -302,7 +343,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
         h('h1', { className: 'concert__song' }, song.name),
         h('div', { className: 'concert__tempo' }, `${song.bpm} BPM · ${song.beatsPerBar}/${song.beatDivision}`)
       )
-      setList(`structure|${song.id}`, ...song.sections.slice(concertStart(song).sectionIndex).map(sectionRow))
+      setList(`structure|${song.id}`, ...song.sections.slice(concertStart(song).sectionIndex).map((sec) => sectionRow(song, sec)))
       setControls(`idle|${index}|${last}|${engine.canStart}`, () => [
         controlButton('caret-left', () => selectIndex(index - 1), { disabled: index <= 0 }),
         controlButton('play', play, { main: true, disabled: !engine.canStart }),
@@ -314,7 +355,10 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
     const pos = positionOf(song, engine.playbackState)
     if (!pos) return
     mount(mainEl, currentCard(song, pos))
-    setList(`next|${song.id}|${pos.sectionIndex}|${pos.countIn}`, ...song.sections.slice(pos.sectionIndex + 1).map(sectionRow))
+    setList(
+      `next|${song.id}|${pos.sectionIndex}|${pos.countIn}`,
+      ...song.sections.slice(pos.sectionIndex + 1).map((sec, i) => sectionRow(song, sec, i === 0))
+    )
     setControls('playing', () => [stopEl])
     shownKey = `${pos.sectionIndex}|${pos.countIn}`
     showLive(song, pos)
