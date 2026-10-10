@@ -12,9 +12,9 @@ export interface EngineSettings {
   beatDivision: number
   voiceCount: boolean
   voiceCues: boolean
-  /** Что играть: песня (с битами — подставить паттерны секций) или бит
+  /** Что играть: песня (её биты секций и филлы — внутри неё) или бит
    * (speed — множитель скорости своего паттерна метронома); null — щелчок. */
-  content: { song: Song; beats: Beat[] } | { beat: Beat; speed?: number } | null
+  content: { song: Song } | { beat: Beat; speed?: number } | null
 }
 
 export interface EngineInputs {
@@ -72,13 +72,19 @@ export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs):
       // На сцене голос смены секции нужен всегда (решение пользователя), в
       // песне — по настройке.
       voiceCues: source.kind === 'concert' || inputs.voiceCues,
-      content: { song, beats: inputs.beats },
+      content: { song },
     }
   }
   if (source.kind === 'songPattern') {
     // Паттерн песни в его редакторе — только он, по кругу, в темпе песни.
     const song = inputs.songs.find((s) => s.id === source.songId)
     return song ? beatSettings(song.pattern, song.bpm) : null
+  }
+  if (source.kind === 'songFill') {
+    // Филл секции в своём редакторе — так же: только он, в темпе песни.
+    const song = inputs.songs.find((s) => s.id === source.songId)
+    const fill = song?.sections.find((s) => s.id === source.sectionId)?.fills?.find((f) => f.at === source.at)
+    return song && fill?.beat ? beatSettings(fill.beat, song.bpm) : null
   }
   const beat = inputs.beats.find((b) => b.id === source.beatId)
   return beat ? beatSettings(beat, beat.bpm) : null
@@ -95,7 +101,7 @@ function beatSettings(beat: Beat, bpm: number): EngineSettings {
  * (с секцией движок обрывал бы круг на конце «песни» в своих тактах). */
 export function songForEngine(content: EngineSettings['content']): EngineSong | null {
   if (!content) return null
-  if ('song' in content) return resolveSongForEngine(content.song, content.beats)
+  if ('song' in content) return resolveSongForEngine(content.song)
   return { sections: [], pattern: withSpeed(resolveBeatPattern(content.beat), content.speed ?? 1) }
 }
 

@@ -23,24 +23,17 @@ export function resolveBeatPattern(beat: Beat, kitId: string = beat.kitId ?? DEF
   }
 }
 
-// Песня для движка: паттерн песни и биты секций (грув, филлы) разрешены в
-// сэмплы. В песне на биты библиотеки — только ссылки (beatId), движок про
-// Beat не знает. Удалённый бит — как будто не назначен: секция играет
-// паттерн песни, филл пропускается.
-export function resolveSongForEngine(song: Song, beats: Beat[]): EngineSong {
-  const byId = new Map(beats.map((b) => [b.id, b]))
+// Песня для движка: паттерн песни и биты секций (грув, филлы) — копии
+// внутри песни — разрешены в сэмплы; движок про Beat не знает. Старая
+// ссылка на «Биты» без копии (ещё не перенесена, embedLibraryBeats) — как
+// будто не назначена: секция играет паттерн песни, филл пропускается.
+export function resolveSongForEngine(song: Song): EngineSong {
   return {
     pattern: resolveBeatPattern(song.pattern),
-    sections: song.sections.map((sec) => {
-      const grooveBeat = sec.beatId ? byId.get(sec.beatId) : undefined
-      return {
-        ...sec,
-        groove: grooveBeat ? resolveBeatPattern(grooveBeat) : undefined,
-        fillPatterns: (sec.fills ?? []).flatMap((f) => {
-          const beat = byId.get(f.beatId)
-          return beat ? [{ at: f.at, pattern: resolveBeatPattern(beat) }] : []
-        }),
-      }
-    }),
+    sections: song.sections.map((sec) => ({
+      ...sec,
+      groove: sec.beat ? resolveBeatPattern(sec.beat) : undefined,
+      fillPatterns: (sec.fills ?? []).flatMap((f) => (f.beat ? [{ at: f.at, pattern: resolveBeatPattern(f.beat) }] : [])),
+    })),
   }
 }

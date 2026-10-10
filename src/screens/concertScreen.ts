@@ -208,7 +208,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
 
   function currentCard(song: Song, pos: Position): HTMLElement {
     const sec = song.sections[pos.sectionIndex]
-    currentFills = pos.countIn ? new Set() : fillBeats(sec, song.beatsPerBar, getState().beats)
+    currentFills = pos.countIn ? new Set() : fillBeats(sec, song.beatsPerBar)
     barEl = h('div', { className: 'concert__bar' })
     beatEls = Array.from({ length: song.beatsPerBar }, () => h('div', { className: 'concert__beat' }))
     const beats = h('div', { className: 'concert__beats' }, ...beatEls)

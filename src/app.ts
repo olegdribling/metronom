@@ -20,6 +20,7 @@ import {
   draftDirty,
   resetPageEditing,
   setUnlocked,
+  songView,
   type AppState,
 } from './state/appState.ts'
 import { onUserChange } from './data/auth.ts'
@@ -30,7 +31,7 @@ import { mountSongScreen } from './screens/songScreen.ts'
 import { mountSettingsScreen } from './screens/settingsScreen.ts'
 import { mountBeatsScreen } from './screens/beatsScreen.ts'
 import { mountConcertScreen } from './screens/concertScreen.ts'
-import { libraryBeatTarget, metronomePatternTarget, mountBeatEditorScreen, songPatternTarget } from './screens/beatEditorScreen.ts'
+import { libraryBeatTarget, metronomePatternTarget, mountBeatEditorScreen, songFillTarget, songPatternTarget } from './screens/beatEditorScreen.ts'
 import { Beat, PlaybackSource, Song } from './types.ts'
 
 const ROUTE_PATHS: Record<RouteKind, string> = {
@@ -55,10 +56,10 @@ export function startApp(root: HTMLElement): void {
   //
   // Движок догоняет состояние здесь, на каждое изменение: песню и биты
   // правят после открытия (в том числе снимки Firestore после обновления
-  // страницы). Песне уходит копия с подставленными паттернами битов секций
-  // (songForEngine) — пересобирается, когда меняется песня или биты (правка
-  // бита сразу слышна в песне). Каждое сохранение — новый объект, поэтому
-  // «изменилась» = другая ссылка.
+  // страницы). Песне уходит копия с паттернами её битов секций и филлов
+  // (songForEngine; биты — внутри песни) — пересобирается, когда меняется
+  // песня. Каждое сохранение — новый объект, поэтому «изменилась» = другая
+  // ссылка.
   let pageSource: PlaybackSource | null = { kind: 'metronome' }
   let activeSource: PlaybackSource = { kind: 'metronome' }
   // Содержимое, уже отданное движку (undefined — ещё ничего).
@@ -67,7 +68,7 @@ export function startApp(root: HTMLElement): void {
 
   const sameContent = (a: EngineSettings['content'] | undefined, b: EngineSettings['content']) =>
     a === b ||
-    (!!a && !!b && 'song' in a && 'song' in b && a.song === b.song && a.beats === b.beats) ||
+    (!!a && !!b && 'song' in a && 'song' in b && a.song === b.song) ||
     (!!a && !!b && 'beat' in a && 'beat' in b && a.beat === b.beat && a.speed === b.speed)
 
   // Играют несохранённые правки (state.draft): их и слушают, пока правят.
@@ -125,9 +126,18 @@ export function startApp(root: HTMLElement): void {
     syncEngine()
   }
 
-  // Страница открылась: правок нет, замок закрыт, звук — её.
+  // Песня, её паттерн и филлы — одна работа (решение пользователя): один
+  // черновик и один замок на все её страницы; «Сохранить?» — только когда
+  // уходят из песни совсем (guard ниже). Работа — песня в адресе.
+  const songWorkOf = (path: string): string | null => /^\/song\/([^/]+)/.exec(path)?.[1] ?? null
+  let songWork: string | null = null
+
+  // Страница открылась: звук — её; правок нет и замок закрыт — если это не
+  // та же песня (из песни в её паттерн или филл и обратно всё сохраняется).
   function enterPage(source: PlaybackSource | null) {
-    resetPageEditing()
+    const work = songWorkOf(location.pathname)
+    if (work === null || work !== songWork) resetPageEditing()
+    songWork = work
     setPageSource(source)
   }
 
@@ -274,9 +284,7 @@ export function startApp(root: HTMLElement): void {
     )
   })
 
-  // «Редактировать» из выбора филла в песне: редактор бита открывается из
-  // песни, и «назад»/сохранение возвращают в неё, к той же секции.
-  let beatEditorReturn: { songId: number; sectionId: string } | null = null
+  // «Назад» из редактора филла — в песню, к той же секции.
   let songFocus: { songId: number; sectionId: string } | null = null
 
   router.on('/song/:id', (params) => {
@@ -293,10 +301,7 @@ export function startApp(root: HTMLElement): void {
     mountScreen((c) =>
       mountSongScreen(c, songId, engine, {
         onOpenPattern: () => router.navigate(`/song/${songId}/pattern`),
-        onEditBeat: (beatId, sectionId) => {
-          beatEditorReturn = { songId, sectionId }
-          router.navigate(`/beats/${encodeURIComponent(beatId)}`)
-        },
+        onEditFill: (sectionId, at) => router.navigate(`/song/${songId}/fill/${encodeURIComponent(sectionId)}/${at}`),
         focusSectionId,
       })
     )
@@ -317,6 +322,34 @@ export function startApp(root: HTMLElement): void {
     mountScreen((c) => mountBeatEditorScreen(c, songPatternTarget(songId), engine, null))
   })
 
+  // Филл секции — в том же редакторе бита, бит внутри песни (решение
+  // пользователя): играет только он, по кругу, в темпе песни; правки — в
+  // черновик песни, замка нет (сюда попадают из открытой песни); «назад» — к
+  // той же секции.
+  router.on('/song/:id/fill/:sectionId/:at', (params) => {
+    const songId = Number(params.id)
+    const sectionId = params.sectionId
+    const at = Number(params.at)
+    enterPage({ kind: 'songFill', songId, sectionId, at })
+    setScreen(
+      'playlist',
+      () => {
+        const sec = songView(songId)?.sections.find((s) => s.id === sectionId)
+        return sec ? `${sec.name} · доля ${at + 1}` : 'Филл'
+      },
+      {
+        showBack: true,
+        onBack: () => {
+          songFocus = { songId, sectionId }
+          router.navigate(`/song/${songId}`)
+        },
+        save: { onClick: commitDraft, enabled: draftDirty },
+        centerTitle: true,
+      }
+    )
+    mountScreen((c) => mountBeatEditorScreen(c, songFillTarget(songId, sectionId, at), engine, null))
+  })
+
   router.on('/beats', () => {
     enterPage(null)
     setScreen('beats', () => 'Биты', { lock: true })
@@ -333,14 +366,7 @@ export function startApp(root: HTMLElement): void {
     // замок открыт.
     let requestSave: () => void = () => {}
     enterPage({ kind: 'beat', beatId })
-    const back = beatEditorReturn
-    beatEditorReturn = null
-    const leave = () => {
-      if (back) {
-        songFocus = back
-        router.navigate(`/song/${back.songId}`)
-      } else router.navigate('/beats')
-    }
+    const leave = () => router.navigate('/beats')
     setScreen('beats', () => getState().beats.find((b) => b.id === beatId)?.name ?? 'Бит', {
       showBack: true,
       onBack: leave,
@@ -368,10 +394,13 @@ export function startApp(root: HTMLElement): void {
 
   // Уходят со страницы с несохранёнными правками — спросить (решение
   // пользователя): «Сохранить» — в аккаунт и уйти, «Не сохранять» —
-  // выбросить и уйти, «Остаться» — никуда не уходить.
+  // выбросить и уйти, «Остаться» — никуда не уходить. Внутри той же песни
+  // (её паттерн, филлы) не спрашиваем — черновик идёт с ней.
   let asking = false
-  router.setGuard((proceed) => {
+  router.setGuard((path, proceed) => {
     if (!draftDirty()) return false
+    const work = songWorkOf(path)
+    if (work !== null && work === songWork) return false
     if (asking) return true
     asking = true
     void askLeave().then((choice) => {

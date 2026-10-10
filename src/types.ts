@@ -71,12 +71,17 @@ export interface Beat {
   tracks: BeatTrack[]
 }
 
-/** Филл в секции: бит из библиотеки, звучащий с доли `at` (номер доли от
- * начала секции, с 0) на свои N долей вместо грува; обрезается концом
- * секции. */
+/** Филл в секции: бит, звучащий с доли `at` (номер доли от начала секции,
+ * с 0) на свои N долей вместо грува; обрезается концом секции. Бит — копия
+ * внутри песни (решение пользователя: песня не зависит от «Битов», правки из
+ * песни туда не уходят). */
 export interface SectionFill {
   at: number
-  beatId: string
+  beat?: Beat
+  /** Старый формат — ссылка на бит из «Битов». Как только «Биты» загружены,
+   * переносится копией (embedLibraryBeats, data/songs.ts); до этого не
+   * звучит. */
+  beatId?: string
 }
 
 export interface Section {
@@ -89,13 +94,16 @@ export interface Section {
   bars: number
   comment: string
   intro: boolean
-  /** Бит из библиотеки — грув на всю секцию вместо паттерна песни (идёт по
-   * кругу от начала секции). Нет — играет паттерн песни. */
+  /** Бит секции — грув на всю секцию вместо паттерна песни (идёт по кругу
+   * от начала секции), копия внутри песни (как у филлов). Нет — играет
+   * паттерн песни. */
+  beat?: Beat
+  /** Старый формат — ссылка на бит из «Битов» (как у SectionFill.beatId). */
   beatId?: string
   fills?: SectionFill[]
   /** Только в копии песни для движка (resolveSongForEngine,
    * data/resolveBeat.ts) — разрешённые паттерны битов. В БД не пишутся:
-   * движок про Beat не знает, а в песне хранятся только ссылки. */
+   * движок про Beat не знает. */
   groove?: Pattern
   fillPatterns?: { at: number; pattern: Pattern }[]
 }
@@ -185,17 +193,21 @@ export type PlaybackSource =
   | { kind: 'song'; songId: number }
   | { kind: 'concert'; songId: number }
   | { kind: 'songPattern'; songId: number }
+  /** Филл секции в своём редакторе — только он, по кругу, в темпе песни. */
+  | { kind: 'songFill'; songId: number; sectionId: string; at: number }
   | { kind: 'metronomePattern' }
   | { kind: 'beat'; beatId: string }
 
 /** Несохранённые правки страницы (решение пользователя: песня, паттерн
  * песни и бит библиотеки сохраняются только дискетой в шапке). Песня —
- * целиком (паттерн песни — её часть), бит — целиком. */
+ * целиком (паттерн, биты секций и филлы — её части), бит — целиком. */
 export type EditDraft = { kind: 'song'; song: Song } | { kind: 'beat'; beat: Beat }
 
 export interface SectionFormData {
   name: string
   bars: number
   comment: string
-  beatId?: string
+  /** «Бит секции»: '' — паттерн песни, 'own' — оставить свой бит секции, иначе
+   * id бита из «Битов» — его копия встанет в секцию при сохранении формы. */
+  beatChoice: string
 }

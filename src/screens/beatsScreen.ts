@@ -19,8 +19,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
     onOpenBeat(beat.id)
   }
 
-  // В песнях, где бит стоит грувом или филлом, остаётся ссылка — там он
-  // показывается «бит удалён», а секция играет паттерн песни.
+  // Песни не задевает: в них свои копии битов (решение пользователя).
   function deleteBeat(beatId: string) {
     saveBeats(getState().beats.filter((b) => b.id !== beatId))
   }
@@ -61,7 +60,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                   ),
                   {
                     ariaLabel: `Удалить бит «${beat.name}»`,
-                    confirmText: `Удалить бит «${beat.name}»? Это нельзя отменить. В песнях, где он стоит, будет «бит удалён».`,
+                    confirmText: `Удалить бит «${beat.name}»? Это нельзя отменить. В песнях останутся их копии.`,
                     onDelete: () => deleteBeat(beat.id),
                     disabled: !getState().unlocked,
                   }

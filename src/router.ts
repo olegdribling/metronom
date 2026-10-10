@@ -9,9 +9,9 @@ interface Route {
   handler: RouteHandler
 }
 
-/** Перед уходом со страницы: true — переход задержан (proceed() выполнит
- * его позже, или его не будет). Несохранённые правки — app.ts. */
-export type RouteGuard = (proceed: () => void) => boolean
+/** Перед уходом со страницы на `path`: true — переход задержан (proceed()
+ * выполнит его позже, или его не будет). Несохранённые правки — app.ts. */
+export type RouteGuard = (path: string, proceed: () => void) => boolean
 
 export interface Router {
   on(path: string, handler: RouteHandler): void
@@ -78,7 +78,7 @@ export function createRouter(): Router {
   }
 
   function navigate(path: string) {
-    if (guard?.(() => go(path))) return
+    if (guard?.(path, () => go(path))) return
     go(path)
   }
 
@@ -95,7 +95,7 @@ export function createRouter(): Router {
     // бы страницу: тогда страница встаёт новой записью.
     const back = () => (to !== from ? history.go(from - to) : history.pushState({ index: ++index }, '', current))
     const proceed = () => (to !== from ? history.go(to - from) : (history.replaceState({ index }, '', path), resolve()))
-    if (guard?.(proceed)) back()
+    if (guard?.(path, proceed)) back()
     else resolve()
   })
 

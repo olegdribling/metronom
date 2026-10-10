@@ -7,7 +7,7 @@ import { Beat, EditDraft, MetronomeSettings, PATTERN_SPEEDS, PatternSpeed, Playl
 import { CONFIG, DEFAULT_METER } from '../config.ts'
 import type { UserLibrary } from '../data/userLibrary.ts'
 import { openUserLibrary } from '../data/userLibrary.ts'
-import { clampBpm, clampMeter } from '../data/songs.ts'
+import { clampBpm, clampMeter, embedLibraryBeats } from '../data/songs.ts'
 import { signOutUser, type AppUser } from '../data/auth.ts'
 import { stableStringify } from '../data/docSync.ts'
 
@@ -177,6 +177,20 @@ function describeSyncError(err: unknown): string {
   return `Синхронизация с аккаунтом остановилась: ${reason}.`
 }
 
+// Старые песни ссылались на биты из «Битов» (бит секции, филлы) — переносим
+// копиями внутрь песен (решение пользователя: песня не зависит от «Битов»),
+// как только пришли и песни, и биты. Записывается сразу, без дискеты: это
+// перенос данных, а не правка. Открытый черновик песни — так же, иначе он
+// отличался бы от сохранённого одним переносом.
+function embedLegacyBeatLinks() {
+  if (!state.songsLoaded || !state.beatsLoaded) return
+  const songs = state.songs.map((s) => embedLibraryBeats(s, state.beats))
+  if (songs.every((s, i) => s === state.songs[i])) return
+  state.songs = songs
+  if (state.draft?.kind === 'song') state.draft = { kind: 'song', song: embedLibraryBeats(state.draft.song, state.beats) }
+  if (library && state.playlistId) library.saveSongs(state.playlistId, songs)
+}
+
 function attachLibrary(lib: UserLibrary) {
   library = lib
   lib.onPlaylistsChange((list) => {
@@ -189,6 +203,7 @@ function attachLibrary(lib: UserLibrary) {
     if (playlistId !== state.playlistId) return
     state.songs = songs
     state.songsLoaded = true
+    embedLegacyBeatLinks()
     notify()
   })
   lib.onLastPlaylistChange((id) => {
@@ -197,7 +212,12 @@ function attachLibrary(lib: UserLibrary) {
     applyCurrentPlaylist()
     notify()
   })
-  lib.onBeatsChange((beats) => patchState({ beats, beatsLoaded: true }))
+  lib.onBeatsChange((beats) => {
+    state.beats = beats
+    state.beatsLoaded = true
+    embedLegacyBeatLinks()
+    notify()
+  })
   lib.onMetronomePatternChange((metronomePattern) => patchState({ metronomePattern }))
   lib.onError((err) => {
     console.error('Ошибка синхронизации с Firestore:', err)

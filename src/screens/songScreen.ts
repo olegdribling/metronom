@@ -13,16 +13,17 @@
 // перерисовки экрана (как подсветка доли в metronomeScreen.ts и шага в
 // редакторе бита).
 //
-// Биты из библиотеки в секциях: в форме секции — «Бит секции» (грув на всю
-// секцию вместо паттерна песни), тап по квадратику-доле — филл с этой доли
-// (бит на N/M занимает N долей, доли под ним отмечены). В песне хранятся
-// только ссылки (beatId), паттерны подставляет app.ts для движка.
+// Биты в секциях: в форме секции — «Бит секции» (грув на всю секцию вместо
+// паттерна песни), тап по квадратику-доле — филл с этой доли (бит на N/M
+// занимает N долей, доли под ним отмечены). Все они — копии внутри песни
+// (решение пользователя): бит из «Битов» копируется в песню, правки из песни
+// в «Биты» не уходят, и песня от «Битов» не зависит.
 //
-// Правки — черновиком (state.draft): в аккаунт — только дискетой в шапке,
-// уход без неё — вопрос (app.ts). Замок в шапке закрыт — темп, размер,
-// секции и филлы только показываются, играть можно (решение пользователя).
-// Новые биты (филл «Редактировать», копия квадратика) уходят в библиотеку
-// сразу — в песне до дискеты только ссылка на них.
+// Правки — черновиком (state.draft): песня, её паттерн и филлы — одно целое
+// (решение пользователя), в аккаунт — только дискетой в шапке любой из этих
+// страниц; «Сохранить?» — когда уходят из песни совсем (app.ts). Замок в
+// шапке закрыт — темп, размер, секции и филлы только показываются, играть
+// можно; открыт — на всю работу с песней, в том числе в её филлах.
 //
 // Секции везде — по id, не по индексу: индексы сдвигаются при удалении,
 // перетаскивании и правке с другого устройства, и открытая форма правки
@@ -35,11 +36,15 @@ import { icon } from '../icons.ts'
 import { CONFIG, SECTION_TYPES } from '../config.ts'
 import { Beat, PlaybackState, Section, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
-import { getState, subscribe, saveBeats, setDraft, songView } from '../state/appState.ts'
+import { getState, subscribe, setDraft, songView } from '../state/appState.ts'
 import {
+  barGridColumns,
   beatLengthInBeats,
   clampBars,
   clampBpm,
+  copyBeat,
+  coveringFill,
+  newBeatId,
   newSectionId,
   pruneFills,
   sectionBeatCount,
@@ -49,13 +54,13 @@ import {
   withSongMeter,
 } from '../data/songs.ts'
 
-const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '' })
+const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '', beatChoice: '' })
 
 export interface SongScreenOptions {
   onOpenPattern: () => void
-  /** «Редактировать» в выборе филла — открыть бит в редакторе (из песни). */
-  onEditBeat: (beatId: string, sectionId: string) => void
-  /** Вернулись из редактора бита — доехать до этой секции. */
+  /** «Редактировать» в выборе филла — филл с доли `at` в редакторе бита. */
+  onEditFill: (sectionId: string, at: number) => void
+  /** Вернулись из редактора филла — доехать до этой секции. */
   focusSectionId: string | null
 }
 
@@ -83,17 +88,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
 
   const locked = () => !getState().unlocked
 
-  function beatById(id: string | undefined): Beat | undefined {
-    return id ? getState().beats.find((b) => b.id === id) : undefined
-  }
-
-  // Бит на N/M занимает в песне N долей (data/beatMeter.ts).
-  const fillLength = (beatId: string) => beatLengthInBeats(beatById(beatId))
-
-  function beatLabel(id: string | undefined): string {
-    const beat = beatById(id)
-    return beat ? `«${beat.name}»` : 'бит удалён'
-  }
+  const libraryBeat = (id: string) => getState().beats.find((b) => b.id === id)
 
   function updateSong(patch: Partial<Song>) {
     const song = currentSong()
@@ -143,48 +138,40 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
 
   const sectionById = (sectionId: string) => currentSong()?.sections.find((s) => s.id === sectionId)
 
-  function assignFill(sectionId: string, at: number, beatId: string) {
+  // «Из списка»: копия бита из «Битов» встаёт филлом с этой доли — в песне
+  // своя копия (решение пользователя).
+  function assignFill(sectionId: string, at: number, beat: Beat) {
     const fills = (sectionById(sectionId)?.fills ?? []).filter((f) => f.at !== at)
     fillPicker = null
-    updateSection(sectionId, { fills: [...fills, { at, beatId }].sort((a, b) => a.at - b.at) })
+    updateSection(sectionId, { fills: [...fills, { at, beat: copyBeat(beat) }].sort((a, b) => a.at - b.at) })
   }
 
   // «Редактировать» на доле: правится то, что звучит в этом квадратике, и
-  // только здесь (решение пользователя) — всегда через новый бит-филл на
-  // этой доле, общие биты библиотеки не трогаются:
-  //   стоит филл → его копия встаёт на его место;
-  //   звучит грув секции → кусок грува на эту долю (M клеток) → филл;
-  //   звучит паттерн песни → его кусок на эту долю → филл;
+  // только здесь (решение пользователя) — всегда филл этой песни:
+  //   стоит филл → он сам (он и так внутри песни);
+  //   звучит грув секции → кусок грува на эту долю (M клеток) → новый филл;
+  //   звучит паттерн песни → его кусок на эту долю → новый филл;
   //   только щелчок → пустой филл 1/4 (пустой филл — пауза).
+  // Филл открывается в редакторе бита, правки — в тот же черновик песни.
   function editAt(sectionId: string, at: number) {
     const song = currentSong()
     const index = song?.sections.findIndex((s) => s.id === sectionId) ?? -1
     if (!song || index < 0) return
     const sec = song.sections[index]
-    const fills = sec.fills ?? []
-    const id = `beat_${Date.now()}`
-    const covering = fills
-      .filter((f) => beatById(f.beatId) && at >= f.at && at < f.at + fillLength(f.beatId))
-      .sort((a, b) => b.at - a.at)[0]
-    let beat: Beat
-    let fillAt = at
-    if (covering) {
-      const source = beatById(covering.beatId)!
-      // Темп копии — темп песни: в редакторе она звучит так же, как здесь.
-      beat = { ...source, id, name: `${source.name} (копия)`, bpm: song.bpm, tracks: source.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
-      fillAt = covering.at
-    } else {
-      beat = sliceForBeat(song, index, at, id, getState().beats)
-    }
-    saveBeats([...getState().beats, beat])
     fillPicker = null
-    updateSection(sectionId, { fills: [...fills.filter((f) => f.at !== fillAt), { at: fillAt, beatId: id }].sort((a, b) => a.at - b.at) })
-    opts.onEditBeat(id, sectionId)
+    const covering = coveringFill(sec, at)
+    if (covering) {
+      opts.onEditFill(sectionId, covering.at)
+      return
+    }
+    const beat = sliceForBeat(song, index, at, newBeatId())
+    updateSection(sectionId, { fills: [...(sec.fills ?? []).filter((f) => f.at !== at), { at, beat }].sort((a, b) => a.at - b.at) })
+    opts.onEditFill(sectionId, at)
   }
 
   // «Копировать влево/вправо»: квадратик целиком — в соседний (решение
   // пользователя). Что именно копируется — squareContent (data/songs.ts):
-  // филл на эту долю — он сам, кусок филла/грува/паттерна — новый бит на
+  // филл на эту долю — его копия, кусок филла/грува/паттерна — новый бит на
   // долю, только щелчок — у соседа просто снимается его филл. Филл,
   // стоявший на соседнем квадратике, заменяется. Меню переезжает на копию —
   // можно жать дальше, как копия вбок в сетке бита.
@@ -195,22 +182,27 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     const sec = song.sections[index]
     const target = at + direction
     if (target < 0 || target >= sectionBeatCount(sec, song.beatsPerBar)) return
-    const content = squareContent(song, index, at, `beat_${Date.now()}`, getState().beats)
+    const beat = squareContent(song, index, at, newBeatId())
     const fills = (sec.fills ?? []).filter((f) => f.at !== target)
-    if (content && 'beat' in content) {
-      saveBeats([...getState().beats, content.beat])
-      fills.push({ at: target, beatId: content.beat.id })
-    } else if (content) {
-      fills.push({ at: target, beatId: content.beatId })
-    }
+    if (beat) fills.push({ at: target, beat })
     fillPicker = { sectionId, at: target, list: false }
     updateSection(sectionId, { fills: fills.sort((a, b) => a.at - b.at) })
+  }
+
+  // Форма → секция. «Бит секции»: свой бит секции — остаётся, бит из
+  // «Битов» — его копия (решение пользователя), «Паттерн песни» — без бита.
+  // Старая ссылка на «Биты» уходит.
+  function withForm(sec: Section, data: SectionFormData): Section {
+    const { beatId: _link, beat: own, ...rest } = sec
+    const chosen = data.beatChoice && data.beatChoice !== 'own' ? libraryBeat(data.beatChoice) : undefined
+    const beat = data.beatChoice === 'own' ? own : chosen ? copyBeat(chosen) : undefined
+    return { ...rest, name: data.name, bars: clampBars(data.bars), comment: data.comment, ...(beat ? { beat } : {}) }
   }
 
   function addSection() {
     const song = currentSong()
     if (!song) return
-    const section: Section = { ...newSection, id: newSectionId(), bars: clampBars(newSection.bars), intro: false }
+    const section = withForm({ id: newSectionId(), name: '', bars: 1, comment: '', intro: false }, newSection)
     showAddForm = false
     newSection = emptySectionForm()
     updateSong({ sections: [...song.sections, section] })
@@ -230,7 +222,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     const sec = sectionById(sectionId)
     if (!sec) return
     editingId = sectionId
-    editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '', beatId: sec.beatId }
+    editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '', beatChoice: sec.beat ? 'own' : '' }
     showAddForm = false
     render()
   }
@@ -241,7 +233,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     const id = editingId
     editingId = null
     // Секцию укоротили — филлы, начинавшиеся за её новым концом, убираем.
-    const sections = song.sections.map((sec) => (sec.id === id ? { ...sec, ...editData, bars: clampBars(editData.bars) } : sec))
+    const sections = song.sections.map((sec) => (sec.id === id ? withForm(sec, editData) : sec))
     updateSong({ sections: pruneFills(sections, song.beatsPerBar) })
   }
 
@@ -266,7 +258,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   // закрывалась после каждого символа. Внешние перерисовки (снимок
   // Firestore посреди ввода) переживают фокус и курсор благодаря ключам
   // полей (mount() в dom.ts).
-  function sectionForm(keyPrefix: string, data: SectionFormData, onSubmit: () => void, onCancel: () => void) {
+  // own — бит этой секции (форма правки): его можно оставить.
+  function sectionForm(keyPrefix: string, data: SectionFormData, onSubmit: () => void, onCancel: () => void, own?: Beat) {
     const barsInput = h('input', {
       type: 'text',
       className: 'input input--center',
@@ -325,15 +318,13 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
           {
             className: 'input',
             key: `${keyPrefix}-beat`,
-            onChange: (e: Event) => (data.beatId = (e.target as HTMLSelectElement).value || undefined),
+            onChange: (e: Event) => (data.beatChoice = (e.target as HTMLSelectElement).value),
           },
-          h('option', { value: '', selected: !data.beatId }, 'Паттерн песни'),
+          h('option', { value: '', selected: data.beatChoice === '' }, 'Паттерн песни'),
+          own ? h('option', { value: 'own', selected: data.beatChoice === 'own' }, `${own.name} · ${own.beatsPerBar}/${own.beatDivision} (в песне)`) : null,
           ...getState().beats.map((b) =>
-            h('option', { value: b.id, selected: b.id === data.beatId }, `${b.name} · ${b.beatsPerBar}/${b.beatDivision}`)
-          ),
-          // Назначенный бит удалён из библиотеки — показать это, а не молча
-          // переключить на «Паттерн песни».
-          data.beatId && !beatById(data.beatId) ? h('option', { value: data.beatId, selected: true }, 'бит удалён') : null
+            h('option', { value: b.id, selected: b.id === data.beatChoice }, `${b.name} · ${b.beatsPerBar}/${b.beatDivision}`)
+          )
         )
       ),
       h(
@@ -345,27 +336,20 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     )
   }
 
-  // Сколько тактов помещается в строку сетки — целыми, как в v1 (там 2
-  // такта по 4 доли = 8 квадратиков): строка не больше 8, но не меньше
-  // одного такта (при 9+ долях в такте — такт на строку).
-  function barGridColumns(beatsPerBar: number): number {
-    return beatsPerBar * Math.max(1, Math.floor(8 / beatsPerBar))
-  }
-
   function barGrid(sec: Section, beatsPerBar: number, firstBar: number) {
     const sectionBeats = sectionBeatCount(sec, beatsPerBar)
     const grid = h('div', { className: 'bar-grid' })
     grid.style.setProperty('--bar-grid-columns', String(barGridColumns(beatsPerBar)))
     const fills = sec.fills ?? []
     for (let i = 0; i < sectionBeats; i++) {
-      const underFill = fills.some((f) => i >= f.at && i < Math.min(f.at + fillLength(f.beatId), sectionBeats))
+      const underFill = fills.some((f) => !!f.beat && i >= f.at && i < Math.min(f.at + beatLengthInBeats(f.beat), sectionBeats))
       const cell = h('button', {
         type: 'button',
         className:
           'bar-grid__cell' +
           (i % beatsPerBar === 0 ? ' bar-grid__cell--bar-start' : '') +
           (underFill ? ' bar-grid__cell--fill' : '') +
-          (fills.some((f) => f.at === i) ? ' bar-grid__cell--fill-start' : '') +
+          (fills.some((f) => !!f.beat && f.at === i) ? ' bar-grid__cell--fill-start' : '') +
           (fillPicker?.sectionId === sec.id && fillPicker.at === i ? ' bar-grid__cell--picked' : ''),
         'aria-label': `Доля ${i + 1} — филл`,
         dataset: { beat: String(firstBar * beatsPerBar + i) },
@@ -383,10 +367,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   }
 
   // Меню квадратика (решение пользователя — только кнопки): «Редактировать»,
-  // «Из списка» (список битов библиотеки — вставить филл с этой доли),
+  // «Из списка» (биты из «Битов» — копия встанет филлом с этой доли),
   // «Копировать влево/вправо» (на крайнем квадратике секции — неактивна), ×.
   function renderFillPicker(sec: Section, at: number, list: boolean, beatsPerBar: number): HTMLElement {
-    const startsHere = (sec.fills ?? []).find((f) => f.at === at)
     const beats = getState().beats
     const last = sectionBeatCount(sec, beatsPerBar) - 1
     return h(
@@ -419,12 +402,11 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
               ...beats.map((b) =>
                 h(
                   'button',
-                  { type: 'button', className: 'list-row', onClick: () => assignFill(sec.id, at, b.id) },
+                  { type: 'button', className: 'list-row', onClick: () => assignFill(sec.id, at, b) },
                   icon('drum'),
                   h('span', { className: 'grow' }, b.name),
                   h('span', { className: 'badge' }, `${b.beatsPerBar}/${b.beatDivision}`),
-                  h('span', { className: 'badge' }, `${b.beatsPerBar} дол.`),
-                  startsHere?.beatId === b.id ? icon('check-circle') : null
+                  h('span', { className: 'badge' }, `${b.beatsPerBar} дол.`)
                 )
               )
             )
@@ -463,16 +445,22 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
             )
       ),
       sec.comment ? h('div', { className: 'mt-2 text-bold' }, sec.comment) : null,
-      sec.beatId ? h('div', { className: 'mt-2 text-small text-sub' }, `Бит: ${beatLabel(sec.beatId)}`) : null,
+      sec.beat ? h('div', { className: 'mt-2 text-small text-sub' }, `Бит: «${sec.beat.name}»`) : null,
       // Филлы видны только отметками на квадратиках — без строк «Филл … с
       // доли N» (решение пользователя).
       barGrid(sec, beatsPerBar, firstBar),
       fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at, fillPicker.list, beatsPerBar) : null,
       editingId === sec.id
-        ? sectionForm(`edit-${sec.id}`, editData, saveEdit, () => {
-            editingId = null
-            render()
-          })
+        ? sectionForm(
+            `edit-${sec.id}`,
+            editData,
+            saveEdit,
+            () => {
+              editingId = null
+              render()
+            },
+            sec.beat
+          )
         : null
     )
   }
@@ -541,7 +529,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     // Элементы сетки новые — вернуть на них текущую закраску сразу, не
     // дожидаясь следующей доли.
     showPlayback(lastPlayback, true)
-    // Вернулись из редактора бита — показать ту же секцию (как только песня
+    // Вернулись из редактора филла — показать ту же секцию (как только песня
     // есть на экране: после обновления страницы она приходит позже).
     if (focusPending !== null) {
       const index = song.sections.findIndex((s) => s.id === focusPending)

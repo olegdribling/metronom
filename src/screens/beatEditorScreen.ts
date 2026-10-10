@@ -1,5 +1,6 @@
 // Редактор бита — один на весь сервис (решение пользователя): бит/брейк из
-// библиотеки «Биты» и паттерн песни (BeatEditorTarget ниже). Сама сетка и всё её поведение (тап, выделение
+// библиотеки «Биты», паттерн и филлы песни, свой паттерн метронома
+// (BeatEditorTarget ниже). Сама сетка и всё её поведение (тап, выделение
 // прямоугольником, копии, вставка, заливка, добавление/удаление шагов и
 // строк) — components/beatGrid.ts, повторяет редактор референса
 // (realdrummetronome.com/editor). Здесь — всё вокруг сетки: кит, BPM,
@@ -16,8 +17,9 @@
 // имя и подтверждение), чтобы не держать на экране лишний постоянный ввод.
 // У паттерна песни имени нет — дискета просто сохраняет.
 //
-// Бит библиотеки и паттерн песни правятся черновиком (state.draft): в
-// аккаунт — только дискетой в шапке, уход без неё — вопрос (app.ts).
+// Бит библиотеки, паттерн и филлы песни правятся черновиком (state.draft;
+// у паттерна и филлов — черновик их песни): в аккаунт — только дискетой в
+// шапке, уход без неё — вопрос (app.ts).
 // У бита библиотеки ещё и замок (решение пользователя): закрыт — сетка,
 // кит и темп только показываются. Свой паттерн метронома — как раньше,
 // каждая правка сразу в аккаунт. Своей кнопки плей в
@@ -75,6 +77,38 @@ export function libraryBeatTarget(beatId: string): BeatEditorTarget {
       },
     },
     lockable: true,
+  }
+}
+
+// Филл секции песни — бит внутри песни (Section.fills[].beat, решение
+// пользователя: правки из песни в «Биты» не уходят). Как у паттерна: темп —
+// песни, имени нет, правки — в тот же черновик песни (песня и её биты — одно
+// целое), в аккаунт — дискетой. Замка нет: сюда попадают из открытой песни,
+// и он открыт на всю работу с ней.
+export function songFillTarget(songId: number, sectionId: string, at: number): BeatEditorTarget {
+  const song = () => songView(songId)
+  const update = (patch: Partial<Song>) => {
+    const current = song()
+    if (current) setDraft({ kind: 'song', song: { ...current, ...patch } })
+  }
+  return {
+    get: () => song()?.sections.find((s) => s.id === sectionId)?.fills?.find((f) => f.at === at)?.beat,
+    save: (beat) => {
+      const current = song()
+      if (!current) return
+      update({
+        sections: current.sections.map((sec) =>
+          sec.id === sectionId ? { ...sec, fills: (sec.fills ?? []).map((f) => (f.at === at ? { at, beat } : f)) } : sec
+        ),
+      })
+    },
+    loaded: () => getState().songsLoaded,
+    notFoundText: 'Филл не найден.',
+    gateText: 'Войдите — песни и плейлисты хранятся в вашем аккаунте и видны на любом устройстве.',
+    tempo: {
+      get: () => song()?.bpm ?? CONFIG.DEFAULT_BPM,
+      set: (bpm) => update({ bpm: clampBpm(bpm) }),
+    },
   }
 }
 
