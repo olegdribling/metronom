@@ -44,6 +44,7 @@ import {
   clampBars,
   clampBpm,
   copyBeat,
+  copySectionSettings,
   coveringFill,
   newBeatId,
   newSectionId,
@@ -81,6 +82,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   // Открытое меню квадратика: секция, доля (от начала секции, с 0) и открыт
   // ли в нём список битов («Из списка»).
   let fillPicker: { sectionId: string; at: number; list: boolean } | null = null
+  // Открытое «Копировать в…»: из какой секции и куда (отмеченные секции).
+  let copyPanel: { sectionId: string; targets: Set<string> } | null = null
   let focusPending = opts.focusSectionId
 
   function currentSong(): Song | undefined {
@@ -219,9 +222,67 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     updateSong({ sections: song.sections.filter((s) => s.id !== sectionId) })
   }
 
+  // «Копировать в…» (решение пользователя): все установки секции — в
+  // отмеченные секции; те же по названию (другие VERSE) отмечены сразу —
+  // настроил один куплет и разнёс по остальным. Повторный тап — закрыть.
+  function toggleCopy(sectionId: string) {
+    const song = currentSong()
+    const src = sectionById(sectionId)
+    if (!song || !src) return
+    const same = song.sections.filter((s) => s.id !== sectionId && s.name === src.name).map((s) => s.id)
+    copyPanel = copyPanel?.sectionId === sectionId ? null : { sectionId, targets: new Set(same) }
+    editingId = null
+    fillPicker = null
+    render()
+  }
+
+  function copyToTargets() {
+    const song = currentSong()
+    const src = copyPanel ? sectionById(copyPanel.sectionId) : undefined
+    const targets = copyPanel?.targets
+    copyPanel = null
+    if (!song || !src || !targets?.size) {
+      render()
+      return
+    }
+    updateSong({ sections: song.sections.map((sec) => (sec.id !== src.id && targets.has(sec.id) ? copySectionSettings(sec, src) : sec)) })
+  }
+
+  function renderCopyPanel(src: Section, targets: Set<string>): HTMLElement {
+    const song = currentSong()!
+    return h(
+      'div',
+      { className: 'card card--inset stack stack--2' },
+      h('span', { className: 'text-small text-sub' }, 'Копировать в:'),
+      ...song.sections.flatMap((sec, i) =>
+        sec.id === src.id
+          ? []
+          : [
+              h(
+                'label',
+                { className: 'row checkbox-row' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: targets.has(sec.id),
+                  onChange: (e: Event) => ((e.target as HTMLInputElement).checked ? targets.add(sec.id) : targets.delete(sec.id)),
+                }),
+                h('span', {}, `${sec.name} (${i + 1}-я)`)
+              ),
+            ]
+      ),
+      h(
+        'div',
+        { className: 'row row--3' },
+        button('Скопировать', { variant: 'accent', iconName: 'copy', onClick: copyToTargets }),
+        button('', { iconName: 'x', onClick: () => { copyPanel = null; render() } })
+      )
+    )
+  }
+
   function startEdit(sectionId: string) {
     const sec = sectionById(sectionId)
     if (!sec) return
+    copyPanel = null
     editingId = sectionId
     editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '', beatChoice: sec.beat ? 'own' : '' }
     showAddForm = false
@@ -351,6 +412,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         onClick: () => {
           const same = fillPicker?.sectionId === sec.id && fillPicker.at === i
           fillPicker = same ? null : { sectionId: sec.id, at: i, list: false }
+          copyPanel = null
           render()
         },
       })
@@ -408,6 +470,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   }
 
   function sectionCard(sec: Section, index: number, beatsPerBar: number, firstBar: number) {
+    // Копировать есть куда — в песне есть другие секции.
+    const hasOthers = (currentSong()?.sections.length ?? 0) > 1
     return h(
       'div',
       {
@@ -434,6 +498,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
           // ▶ — играть с этой секции: перед ней отсчёт, как всегда у песни
           // (playSong); уже играет — заново с неё.
           iconButton('play', { onClick: () => void playSong(engine, firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
+          iconButton('copy', { onClick: () => toggleCopy(sec.id), ariaLabel: 'Копировать в…', disabled: locked() || !hasOthers }),
           iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию', disabled: locked() }),
           iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию', disabled: locked() })
         )
@@ -444,6 +509,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       // доли N» (решение пользователя).
       barGrid(sec, beatsPerBar, firstBar),
       fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at, fillPicker.list, beatsPerBar) : null,
+      copyPanel?.sectionId === sec.id ? renderCopyPanel(sec, copyPanel.targets) : null,
       editingId === sec.id
         ? sectionForm(
             `edit-${sec.id}`,
@@ -482,10 +548,12 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     // переезжают на соседнюю.
     if (editingId !== null && !song.sections.some((s) => s.id === editingId)) editingId = null
     if (fillPicker && !song.sections.some((s) => s.id === fillPicker!.sectionId)) fillPicker = null
-    // Замок закрыли — открытые формы и выбор филла закрываются.
+    if (copyPanel && !song.sections.some((s) => s.id === copyPanel!.sectionId)) copyPanel = null
+    // Замок закрыли — открытые формы, выбор филла и копирование закрываются.
     if (locked()) {
       editingId = null
       fillPicker = null
+      copyPanel = null
       showAddForm = false
     }
 

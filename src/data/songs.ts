@@ -115,6 +115,20 @@ export function embedLibraryBeats(song: Song, beats: Beat[]): Song {
   }
 }
 
+/** «Копировать в…» на экране песни (решение пользователя): все установки
+ * секции src — такты, бит секции, брейки, комментарий — в секцию target; id
+ * и название остаются её. Биты — свои копии: правка брейка в одной секции
+ * потом не меняет другую. */
+export function copySectionSettings(target: Section, src: Section): Section {
+  const { beat: _beat, beatId: _link, fills: _fills, ...rest } = target
+  const next: Section = { ...rest, bars: src.bars, comment: src.comment }
+  if (src.beat) next.beat = copyBeat(src.beat)
+  else if (src.beatId) next.beatId = src.beatId
+  const fills = (src.fills ?? []).map((f): SectionFill => (f.beat ? { at: f.at, beat: copyBeat(f.beat) } : { ...f }))
+  if (fills.length) next.fills = fills
+  return next
+}
+
 /** Песня из БД → актуальная модель: id секций, такты в пределах, размер
  * такта (у старых песен его нет — 4/4), темп в пределах. Поля движка
  * (groove/fillPatterns) отбрасываются — в БД им не место. Вступление

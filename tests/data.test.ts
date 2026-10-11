@@ -7,6 +7,7 @@ import { normalizeBeat } from '../src/data/beatsLibrary.ts'
 import {
   clampBars,
   copyBeat,
+  copySectionSettings,
   createEmptySong,
   embedLibraryBeats,
   emptySongPattern,
@@ -398,4 +399,23 @@ test('филл в своём редакторе: играет только он,
   assert.deepEqual([s.bpm, s.beatsPerBar, s.beatDivision, s.voiceCues], [77, 2, 4, false])
   assert.deepEqual(songForEngine(s.content)!.sections, [], 'без секций — по кругу')
   assert.equal(engineSettingsFor({ kind: 'songFill', songId: song.id, sectionId: 'v', at: 0 }, inputs), null, 'на этой доле филла нет')
+})
+
+test('«Копировать в…»: такты, бит, брейки и комментарий — копиями; id и название — свои', () => {
+  const groove = beat('g', [true, false, false, false, true, false, false, false])
+  const brk = beat('f', [true, true, true, true])
+  const src = { id: 'v1', name: 'VERSE', bars: 8, comment: 'Тихо', beat: groove, fills: [{ at: 30, beat: brk }] }
+  const target = { id: 'v2', name: 'VERSE 2', bars: 4, comment: 'Старое', beatId: 'ссылка', fills: [{ at: 1, beat: beat('x', [true, false, false, false]) }] }
+  const copy = copySectionSettings(target, src)
+  assert.deepEqual([copy.id, copy.name, copy.bars, copy.comment], ['v2', 'VERSE 2', 8, 'Тихо'])
+  assert.equal('beatId' in copy, false, 'старая ссылка уходит')
+  assert.deepEqual(copy.beat?.tracks, groove.tracks)
+  assert.notEqual(copy.beat, groove, 'бит секции — своя копия')
+  assert.deepEqual(copy.fills?.map((f) => [f.at, f.beat?.tracks]), [[30, brk.tracks]], 'брейки — как у источника, свои прежние ушли')
+  assert.notEqual(copy.fills?.[0].beat, brk, 'брейк — своя копия')
+  copy.fills![0].beat!.tracks[0].steps[0] = false
+  assert.equal(brk.tracks[0].steps[0], true, 'правка копии не трогает источник')
+
+  const plain = copySectionSettings(target, { id: 'c', name: 'CHORUS', bars: 2, comment: '' })
+  assert.deepEqual([plain.bars, plain.comment, 'beat' in plain, 'fills' in plain, 'beatId' in plain], [2, '', false, false, false], 'без бита и брейков — у цели их тоже нет')
 })
