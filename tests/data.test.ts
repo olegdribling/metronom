@@ -25,6 +25,7 @@ import {
 } from '../src/data/songs.ts'
 import { engineSettingsFor, playSong, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
+import { moveItem, moveShown, orderedFirst, withOrderOf } from '../src/data/order.ts'
 import { stableStringify } from '../src/data/docSync.ts'
 import { Beat, Song } from '../src/types.ts'
 
@@ -478,4 +479,38 @@ test('несколько квадратиков: копия один раз вп
   assert.equal(copySquares(song, 0, 12, 15, 1, () => 'x'), null, 'не помещается — ничего')
   const left = copySquares(song, 0, 4, 7, -1, () => 'l')!
   assert.deepEqual([left.from, left.to], [0, 3])
+})
+
+test('свой порядок списка: переставленные — по месту, новые — в конце по времени создания', () => {
+  type Item = { id: number; order?: number }
+  const byId = orderedFirst<Item>((a, b) => a.id - b.id)
+  const items: Item[] = [{ id: 5 }, { id: 1, order: 1 }, { id: 9 }, { id: 3, order: 0 }]
+  assert.deepEqual([...items].sort(byId).map((i) => i.id), [3, 1, 5, 9])
+
+  const list: Item[] = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+  const moved = moveItem(list, 0, 2)
+  assert.deepEqual(moved.map((i) => [i.id, i.order]), [[2, 0], [3, 1], [1, 2], [4, 3]])
+  assert.deepEqual(moveItem(moved, 3, 0).map((i) => i.id), [4, 2, 3, 1])
+  assert.equal(moveItem(moved, 1, 1)[1], moved[1], 'место не изменилось — тот же объект (не перезаписывать)')
+
+  assert.equal(normalizeSong({ id: 1, order: 4 }).order, 4, 'место песни хранится')
+  assert.equal('order' in normalizeSong({ id: 1, order: 'x' }), false)
+  assert.equal(normalizeBeat({ id: 'b', order: 2 }).order, 2, 'место бита хранится')
+  assert.equal('order' in copyBeat({ ...normalizeBeat({ id: 'b' }), order: 2 }, 'c'), false, 'у копии в песне места в «Битах» нет')
+})
+
+test('перестановка — по id: список на экране и в состоянии могли разойтись', () => {
+  type Item = { id: number; order?: number }
+  const shown: Item[] = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+  // Пока держали строку, с другого устройства добавили песню в начало.
+  const now: Item[] = [{ id: 9 }, ...shown]
+  assert.deepEqual(moveShown(now, shown, 0, 2)?.map((i) => i.id), [9, 2, 3, 1, 4], 'первая — за третью, как на экране')
+  assert.deepEqual(moveShown(now, shown, 3, 1)?.map((i) => i.id), [9, 1, 4, 2, 3], 'четвёртая — на место второй')
+  assert.equal(moveShown(shown.filter((i) => i.id !== 3), shown, 0, 2), null, 'той, к которой отпустили, уже нет — ничего')
+})
+
+test('дискета не трогает место в списке: его могли переставить с другого устройства', () => {
+  const stored = { id: 1, name: 'Сохранённая', order: 3 }
+  assert.deepEqual(withOrderOf({ id: 1, name: 'Правка', order: 0 }, stored), { id: 1, name: 'Правка', order: 3 })
+  assert.equal('order' in withOrderOf({ id: 1, name: 'Правка', order: 0 }, { id: 1, name: 'Сохранённая' }), false)
 })

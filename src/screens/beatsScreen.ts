@@ -8,9 +8,11 @@ import { h, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
 import { deletableRow } from '../components/deletableRow.ts'
+import { deferWhileSorting, makeSortable } from '../components/sortable.ts'
 import { icon } from '../icons.ts'
-import { BeatKind } from '../types.ts'
+import { Beat, BeatKind } from '../types.ts'
 import { createEmptyBeat } from '../data/beatsLibrary.ts'
+import { moveShown } from '../data/order.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 
@@ -41,6 +43,8 @@ export function mountBeatsScreen(container: HTMLElement, engine: AudioEngine, op
   }
 
   function render() {
+    // Строку списка держат или ведут — перерисуемся, когда отпустят.
+    if (deferWhileSorting(container, render)) return
     const gate = accountGate('Войдите — биты хранятся в вашем аккаунте и видны на любом устройстве.')
     if (gate) {
       mount(container, gate)
@@ -56,10 +60,9 @@ export function mountBeatsScreen(container: HTMLElement, engine: AudioEngine, op
         button('Создать', { variant: 'accent', onClick: handleCreate }),
         state.beats.length === 0
           ? h('p', { className: 'text-center text-muted' }, state.beatsLoaded ? 'Пока пусто — создайте первый бит выше' : 'Загрузка…')
-          : h(
-              'div',
-              { className: 'stack stack--2' },
-              ...state.beats.map((beat) =>
+          : sortableBeats(
+              state.beats,
+              state.beats.map((beat) =>
                 deletableRow(
                   h(
                     'button',
@@ -91,6 +94,21 @@ export function mountBeatsScreen(container: HTMLElement, engine: AudioEngine, op
             )
       )
     )
+  }
+
+  // Порядок битов — долгим тапом по строке (решение пользователя; при
+  // открытом замке). Сохраняется сразу, как удаление.
+  function sortableBeats(shown: Beat[], rows: HTMLElement[]): HTMLElement {
+    const list = h('div', { className: 'stack stack--2' }, ...rows)
+    makeSortable(list, {
+      enabled: () => getState().unlocked,
+      ignore: '.icon-btn',
+      onMove: (from, to) => {
+        const beats = moveShown(getState().beats, shown, from, to)
+        if (beats) saveBeats(beats)
+      },
+    })
+    return list
   }
 
   // Бит заиграл или замолчал (в том числе Стоп в футере) — ▶/■ у строк

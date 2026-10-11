@@ -4,6 +4,7 @@ import { Beat, BeatKind, BeatTrack, DrumRole } from '../types.ts'
 import { BEAT_MAX_STEPS, CONFIG, DEFAULT_KIT_ID, DRUM_KITS, DRUM_ROLES } from '../config.ts'
 import { fitMeter } from './beatMeter.ts'
 import { clampBpm } from './limits.ts'
+import { readOrder } from './order.ts'
 
 // Новый бит: один такт 1/4 — дальше длина наращивается в редакторе по
 // одному столбцу; сразу с тремя дорожками — самый частый стартовый набор.
@@ -53,5 +54,6 @@ export function normalizeBeat(raw: Partial<Beat> & { id: string; bars?: number }
     ...fitMeter(steps, { beatsPerBar, beatDivision }),
     steps,
     tracks,
+    ...readOrder(raw.order),
   }
 }

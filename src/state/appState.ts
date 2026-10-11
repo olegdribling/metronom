@@ -10,6 +10,7 @@ import { openUserLibrary } from '../data/userLibrary.ts'
 import { clampBpm, clampMeter, embedLibraryBeats } from '../data/songs.ts'
 import { signOutUser, type AppUser } from '../data/auth.ts'
 import { stableStringify } from '../data/docSync.ts'
+import { withOrderOf } from '../data/order.ts'
 
 export interface AppState {
   themeId: ThemeKey
@@ -364,15 +365,15 @@ export function draftDirty(): boolean {
   if (!draft) return false
   const stored = draft.kind === 'song' ? storedSong(draft.song.id) : storedBeat(draft.beat.id)
   const edited = draft.kind === 'song' ? draft.song : draft.beat
-  return !!stored && stableStringify(stored) !== stableStringify(edited)
+  return !!stored && stableStringify(stored) !== stableStringify(withOrderOf(edited, stored))
 }
 
 /** Дискета: правки — в аккаунт. */
 export function commitDraft(): void {
   const draft = state.draft
   if (draft && draftDirty()) {
-    if (draft.kind === 'song') saveSongs(state.songs.map((s) => (s.id === draft.song.id ? draft.song : s)))
-    else saveBeats(state.beats.map((b) => (b.id === draft.beat.id ? draft.beat : b)))
+    if (draft.kind === 'song') saveSongs(state.songs.map((s) => (s.id === draft.song.id ? withOrderOf(draft.song, s) : s)))
+    else saveBeats(state.beats.map((b) => (b.id === draft.beat.id ? withOrderOf(draft.beat, b) : b)))
   }
   state.draft = null
   notify()

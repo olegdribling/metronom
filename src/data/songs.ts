@@ -5,6 +5,7 @@ import { CONFIG, DEFAULT_METER } from '../config.ts'
 import { Beat, Meter, Section, SectionFill, Song } from '../types.ts'
 import { clampBpm, clampInt, clampMeter } from './limits.ts'
 import { createEmptyBeat, normalizeBeat } from './beatsLibrary.ts'
+import { readOrder } from './order.ts'
 
 export { clampBpm, clampMeter }
 
@@ -59,7 +60,9 @@ export const newBeatId = (): string => `beat_${newSectionId()}`
 /** Копия бита — в песню (решение пользователя: песня не зависит от
  * «Битов», правки из песни туда не уходят). */
 export function copyBeat(beat: Beat, id: string = newBeatId()): Beat {
-  return { ...beat, id, tracks: beat.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
+  // Место в списке «Биты» копии в песне ни к чему.
+  const { order: _order, ...rest } = beat
+  return { ...rest, id, tracks: beat.tracks.map((t) => ({ ...t, steps: [...t.steps] })) }
 }
 
 function normalizeSection(raw: Raw, index: number, usedIds: Set<string>): Section {
@@ -168,6 +171,7 @@ export function normalizeSong(input: unknown): Song {
     ...clampMeter(raw as Partial<Meter>),
     sections: rawSections.flatMap((sec, i) => (sec.intro ? [] : [normalizeSection(sec, i, usedIds)])),
     pattern: normalizeSongPattern(raw.pattern),
+    ...readOrder(raw.order),
   }
 }
 

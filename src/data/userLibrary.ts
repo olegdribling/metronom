@@ -27,6 +27,7 @@ import {
 import { getDb } from './firebase.ts'
 import { METRONOME_PATTERN_ID, normalizeBeat } from './beatsLibrary.ts'
 import { normalizeSong } from './songs.ts'
+import { orderedFirst } from './order.ts'
 import { createDocSync, type DocSync } from './docSync.ts'
 import { CONFIG } from '../config.ts'
 import { Beat, PlaylistInfo, Song } from '../types.ts'
@@ -154,8 +155,9 @@ export function openUserLibrary(uid: string): UserLibrary {
         idOf: (s) => String(s.id),
         fromDoc: songFromDoc,
         toDoc: songToDoc,
-        // Порядок песен — порядок добавления: id песни — время создания.
-        compare: (a, b) => a.id - b.id,
+        // Порядок песен — свой (переставили, order), новые — в конце по
+        // времени добавления: id песни — время создания.
+        compare: orderedFirst<Song>((a, b) => a.id - b.id),
         onChange: (songs) => songsListener?.(id, songs),
         onError: reportError,
       })
@@ -198,7 +200,7 @@ export function openUserLibrary(uid: string): UserLibrary {
     idOf: (b) => b.id,
     fromDoc: beatFromDoc,
     toDoc: beatToDoc,
-    compare: (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    compare: orderedFirst<Beat>((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     onChange: (beats) => beatsListener?.(beats),
     onError: reportError,
   })

@@ -7,9 +7,12 @@ import { h, mount } from '../dom.ts'
 import { button } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
 import { deletableRow } from '../components/deletableRow.ts'
+import { deferWhileSorting, makeSortable } from '../components/sortable.ts'
 import { icon } from '../icons.ts'
 import { CONFIG } from '../config.ts'
 import { createEmptySong } from '../data/songs.ts'
+import { moveShown } from '../data/order.ts'
+import type { Song } from '../types.ts'
 import { getState, subscribe, saveSongs, openPlaylist, closePlaylist, createPlaylist } from '../state/appState.ts'
 
 export interface PlaylistScreenOptions {
@@ -113,10 +116,9 @@ export function mountPlaylistScreen(container: HTMLElement, opts: PlaylistScreen
       ),
       state.songs.length === 0
         ? h('p', { className: 'text-center text-muted' }, state.songsLoaded ? 'Пока нет песен — добавьте первую выше' : 'Загрузка…')
-        : h(
-            'div',
-            { className: 'stack stack--2' },
-            ...state.songs.map((song) =>
+        : sortableSongs(
+            state.songs,
+            state.songs.map((song) =>
               deletableRow(
                 h(
                   'button',
@@ -137,7 +139,25 @@ export function mountPlaylistScreen(container: HTMLElement, opts: PlaylistScreen
     )
   }
 
+  // Порядок песен — долгим тапом по строке (решение пользователя; при
+  // открытом замке — перемещать при закрытом нельзя). Это и порядок в
+  // «Концерте». Сохраняется сразу, как удаление песни.
+  function sortableSongs(shown: Song[], rows: HTMLElement[]): HTMLElement {
+    const list = h('div', { className: 'stack stack--2' }, ...rows)
+    makeSortable(list, {
+      enabled: () => getState().unlocked,
+      ignore: '.icon-btn',
+      onMove: (from, to) => {
+        const songs = moveShown(getState().songs, shown, from, to)
+        if (songs) saveSongs(songs)
+      },
+    })
+    return list
+  }
+
   function render() {
+    // Строку списка держат или ведут — перерисуемся, когда отпустят.
+    if (deferWhileSorting(container, render)) return
     const gate = accountGate('Войдите — песни и плейлисты хранятся в вашем аккаунте и видны на любом устройстве.')
     if (gate) {
       mount(container, gate)
