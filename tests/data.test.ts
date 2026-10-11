@@ -6,7 +6,6 @@ import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
 import {
   clampBars,
-  concertStart,
   copyBeat,
   createEmptySong,
   embedLibraryBeats,
@@ -19,7 +18,7 @@ import {
   squareContent,
   withSongMeter,
 } from '../src/data/songs.ts'
-import { engineSettingsFor, sameSource, songForEngine } from '../src/data/engineSettings.ts'
+import { engineSettingsFor, playSong, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
 import { stableStringify } from '../src/data/docSync.ts'
 import { Beat, Song } from '../src/types.ts'
@@ -71,7 +70,7 @@ test('normalizeBeat: длина, размер, старые биты в такт
   assert.ok(broken.tracks[0].steps.every((v) => v === false))
 })
 
-test('normalizeSong: id секций, такты 1..32, размер 4/4 у старых песен, поля движка не хранятся', () => {
+test('normalizeSong: id секций, такты 1..32, размер 4/4 у старых песен, поля движка и вступление не хранятся', () => {
   const song = normalizeSong({
     id: '5',
     name: 'Старая',
@@ -87,10 +86,13 @@ test('normalizeSong: id секций, такты 1..32, размер 4/4 у ст
   assert.equal(song.id, 5)
   assert.equal(song.bpm, 240)
   assert.deepEqual([song.beatsPerBar, song.beatDivision], [4, 4])
-  assert.deepEqual(song.sections.map((s) => s.id), ['s0', 's1', 'keep'], 'id по позиции — одинаковые на всех устройствах')
-  assert.deepEqual(song.sections.map((s) => s.bars), [2, 32, 3])
-  assert.deepEqual(song.sections[1].fills, [{ at: 3, beatId: 'b' }])
-  assert.equal('groove' in song.sections[2], false)
+  // Вступление «1 2 3 4» убрано (вместо него — отсчёт), id остальным — по
+  // позиции вместе с ним: одинаковые на всех устройствах.
+  assert.deepEqual(song.sections.map((s) => s.id), ['s1', 'keep'])
+  assert.deepEqual(song.sections.map((s) => s.bars), [32, 3])
+  assert.equal('intro' in song.sections[0], false)
+  assert.deepEqual(song.sections[0].fills, [{ at: 3, beatId: 'b' }])
+  assert.equal('groove' in song.sections[1], false)
   assert.deepEqual(song.pattern, emptySongPattern(), 'старый паттерн не переносится — пустой')
 })
 
@@ -126,7 +128,7 @@ test('clampBars: целое 1..32, мусор — 1', () => {
 })
 
 test('pruneFills: филлы за концом секции уходят при смене размера', () => {
-  const sections = [{ id: 'a', name: 'A', bars: 2, comment: '', intro: false, fills: [{ at: 5, beatId: 'x' }, { at: 7, beatId: 'y' }] }]
+  const sections = [{ id: 'a', name: 'A', bars: 2, comment: '', fills: [{ at: 5, beatId: 'x' }, { at: 7, beatId: 'y' }] }]
   assert.deepEqual(pruneFills(sections, 4)[0].fills, sections[0].fills, '8 долей — оба на месте')
   assert.deepEqual(pruneFills(sections, 3)[0].fills, [{ at: 5, beatId: 'x' }], '6 долей — филл с 8-й доли убран')
   assert.equal(pruneFills(sections, 4)[0], sections[0], 'без изменений — тот же объект')
@@ -143,8 +145,8 @@ test('sliceForBeat: кусок грува секции на долю — тот 
   const song: Song = {
     ...createEmptySong('s'),
     sections: [
-      { id: 'i', name: '1 2 3 4', bars: 1, comment: '', intro: true },
-      { id: 'v', name: 'VERSE', bars: 2, comment: '', intro: false, beat: groove },
+      { id: 'a', name: 'A', bars: 1, comment: '' },
+      { id: 'v', name: 'VERSE', bars: 2, comment: '', beat: groove },
     ],
   }
   const slice = sliceForBeat(song, 1, 3, 'new') // доля 4 секции → вторая доля грува
@@ -156,20 +158,20 @@ test('sliceForBeat: кусок паттерна песни — от начала
   const song: Song = {
     ...createEmptySong('s'),
     sections: [
-      { id: 'i', name: '1 2 3 4', bars: 1, comment: '', intro: true },
-      { id: 'v', name: 'VERSE', bars: 2, comment: '', intro: false },
+      { id: 'a', name: 'A', bars: 1, comment: '' },
+      { id: 'v', name: 'VERSE', bars: 2, comment: '' },
     ],
     // 4/4: 16 клеток по 4 на долю, малый на клетке 10
     pattern: { ...emptySongPattern(), steps: 16, beatsPerBar: 4, beatDivision: 4, tracks: [{ role: 'snare', steps: Array.from({ length: 16 }, (_, i) => i === 10) }] },
   }
-  // Интро — 1 такт по 4 доли. Доля 3 секции VERSE (at=2) = доля 7 песни →
+  // Секция A — 1 такт по 4 доли. Доля 3 секции VERSE (at=2) = доля 7 песни →
   // клетки 24..27 по кругу из 16 = 8..11; доля 2 (at=1) → 4..7.
   assert.deepEqual(sliceForBeat(song, 1, 2, 'n').tracks, [{ role: 'snare', steps: [false, false, true, false] }])
   assert.deepEqual(sliceForBeat(song, 1, 1, 'n').tracks, [{ role: 'snare', steps: [false, false, false, false] }])
 })
 
 test('sliceForBeat: ничего не назначено — пустая сетка 1/4', () => {
-  const slice = sliceForBeat(createEmptySong('s'), 0, 0, 'n')
+  const slice = sliceForBeat({ ...createEmptySong('s'), sections: [{ id: 'v', name: 'VERSE', bars: 1, comment: '' }] }, 0, 0, 'n')
   assert.deepEqual([slice.steps, slice.beatsPerBar, slice.beatDivision], [4, 1, 4])
   assert.ok(slice.tracks.every((t) => t.steps.every((v) => !v)))
 })
@@ -179,7 +181,7 @@ test('resolveSongForEngine: биты — копии в песне, старая 
     ...createEmptySong('s'),
     sections: [
       {
-        id: 'v', name: 'VERSE', bars: 1, comment: '', intro: false,
+        id: 'v', name: 'VERSE', bars: 1, comment: '',
         beat: beat('g', [true, false, false, false]),
         fills: [{ at: 1, beat: beat('f', [false, true, false, false]) }, { at: 2, beatId: 'ссылка' }],
       },
@@ -198,14 +200,14 @@ test('перенос старых ссылок: копии битов встаю
   const song: Song = {
     ...createEmptySong('s'),
     sections: [
-      { id: 'i', name: '1 2 3 4', bars: 2, comment: '', intro: true },
-      { id: 'v', name: 'VERSE', bars: 1, comment: '', intro: false, beatId: 'g', fills: [{ at: 1, beatId: 'f' }, { at: 2, beatId: 'нет' }] },
-      { id: 'c', name: 'CHORUS', bars: 1, comment: '', intro: false, beatId: 'нет' },
+      { id: 'a', name: 'A', bars: 2, comment: '' },
+      { id: 'v', name: 'VERSE', bars: 1, comment: '', beatId: 'g', fills: [{ at: 1, beatId: 'f' }, { at: 2, beatId: 'нет' }] },
+      { id: 'c', name: 'CHORUS', bars: 1, comment: '', beatId: 'нет' },
     ],
   }
   const next = embedLibraryBeats(song, [g, f])
-  const [intro, verse, chorus] = next.sections
-  assert.equal(intro, song.sections[0], 'секция без ссылок — та же')
+  const [plain, verse, chorus] = next.sections
+  assert.equal(plain, song.sections[0], 'секция без ссылок — та же')
   assert.deepEqual(verse.beat?.tracks, g.tracks)
   assert.notEqual(verse.beat, g, 'копия, а не тот же бит')
   assert.deepEqual(verse.fills?.map((x) => [x.at, x.beat?.tracks[0].steps]), [[1, [false, true, false, false]]], 'филл удалённого бита убран')
@@ -224,14 +226,14 @@ test('stableStringify не зависит от порядка ключей', () 
 })
 
 test('sliceForBeat: темп нового бита — темп песни', () => {
-  const song = { ...createEmptySong('s'), bpm: 93 }
+  const song = { ...createEmptySong('s'), bpm: 93, sections: [{ id: 'v', name: 'VERSE', bars: 1, comment: '' }] }
   assert.equal(sliceForBeat(song, 0, 0, 'n').bpm, 93)
 })
 
 test('withSongMeter: размер в пределах, филлы за концом секций уходят', () => {
   const song: Song = {
     ...createEmptySong('s'),
-    sections: [{ id: 'v', name: 'VERSE', bars: 1, comment: '', intro: false, fills: [{ at: 3, beatId: 'f' }] }],
+    sections: [{ id: 'v', name: 'VERSE', bars: 1, comment: '', fills: [{ at: 3, beatId: 'f' }] }],
   }
   const next = withSongMeter(song, { beatsPerBar: 3, beatDivision: 99 })
   assert.deepEqual([next.beatsPerBar, next.beatDivision], [3, 8])
@@ -281,8 +283,8 @@ test('squareContent: что копируется из квадратика', () 
     ...createEmptySong('s'),
     bpm: 101,
     sections: [
-      { id: 'a', name: 'A', bars: 1, comment: '', intro: false, fills: [{ at: 0, beat: one }, { at: 2, beat: two }] },
-      { id: 'b', name: 'B', bars: 1, comment: '', intro: false },
+      { id: 'a', name: 'A', bars: 1, comment: '', fills: [{ at: 0, beat: one }, { at: 2, beat: two }] },
+      { id: 'b', name: 'B', bars: 1, comment: '' },
     ],
   }
   const same = squareContent(song, 0, 0, 'n')!
@@ -357,29 +359,40 @@ test('концерт: голос смены секции всегда, оста�
   assert.equal(sameSource({ kind: 'concert', songId: 1 }, { kind: 'song', songId: 1 }), false, 'другой звук — другой источник')
 })
 
-test('концерт: старт с первой настоящей секции, вступление пропускается', () => {
-  const sec = (id: string, bars: number, intro = false) => ({ id, name: id, bars, comment: '', intro })
-  const song: Song = { ...createEmptySong('s'), sections: [sec('intro', 2, true), sec('v', 4), sec('c', 8)] }
-  assert.deepEqual(concertStart(song), { sectionIndex: 1, fromBar: 2 })
-  assert.deepEqual(concertStart({ ...song, sections: [sec('intro', 2, true)] }), { sectionIndex: 0, fromBar: 0 }, 'только вступление — с начала')
-  assert.deepEqual(concertStart({ ...song, sections: [sec('v', 4), sec('c', 8)] }), { sectionIndex: 0, fromBar: 0 })
-
+test('sectionAtBar: секция и такт в ней по такту песни', () => {
+  const sec = (id: string, bars: number) => ({ id, name: id, bars, comment: '' })
+  const song: Song = { ...createEmptySong('s'), sections: [sec('v', 4), sec('c', 8)] }
   assert.deepEqual(sectionAtBar(song, 0), { sectionIndex: 0, barInSection: 1 })
-  assert.deepEqual(sectionAtBar(song, 2), { sectionIndex: 1, barInSection: 1 })
-  assert.deepEqual(sectionAtBar(song, 5), { sectionIndex: 1, barInSection: 4 })
-  assert.deepEqual(sectionAtBar(song, 13), { sectionIndex: 2, barInSection: 8 })
-  assert.equal(sectionAtBar(song, 14), null, 'за концом песни')
+  assert.deepEqual(sectionAtBar(song, 3), { sectionIndex: 0, barInSection: 4 })
+  assert.deepEqual(sectionAtBar(song, 4), { sectionIndex: 1, barInSection: 1 })
+  assert.deepEqual(sectionAtBar(song, 11), { sectionIndex: 1, barInSection: 8 })
+  assert.equal(sectionAtBar(song, 12), null, 'за концом песни')
+})
+
+test('playSong: песня — всегда с отсчёта, с начала или с секции; играет — заново', async () => {
+  const calls: string[] = []
+  const engine = {
+    isPlaying: false,
+    stop: () => calls.push('stop'),
+    start: async (opts?: { fromBar?: number; countInBars?: number }) => void calls.push(`start ${opts?.fromBar} ${opts?.countInBars}`),
+  }
+  await playSong(engine)
+  assert.deepEqual(calls, ['start 0 2'], 'с начала, 2 такта отсчёта')
+  engine.isPlaying = true
+  await playSong(engine, 6)
+  assert.deepEqual(calls, ['start 0 2', 'stop', 'start 6 2'], 'уже играет — с отсчёта с этой секции')
+  assert.deepEqual(createEmptySong('Новая').sections, [], 'новая песня — без вступления «1 2 3 4»')
 })
 
 test('концерт: доли под филлами — как играет движок', () => {
   const twoBeats = beat('two', Array(8).fill(false)) // 2/4 — две доли
-  const section = { id: 'v', name: 'v', bars: 2, comment: '', intro: false, fills: [{ at: 1, beat: twoBeats }, { at: 7, beat: twoBeats }, { at: 4, beatId: 'ссылка' }] }
+  const section = { id: 'v', name: 'v', bars: 2, comment: '', fills: [{ at: 1, beat: twoBeats }, { at: 7, beat: twoBeats }, { at: 4, beatId: 'ссылка' }] }
   assert.deepEqual([...fillBeats(section, 4)].sort((a, b) => a - b), [1, 2, 7], 'конец секции обрезает, старая ссылка без копии не звучит')
 })
 
 test('филл в своём редакторе: играет только он, в темпе песни', () => {
   const fill = beat('f', [true, false, false, false, false, true, false, false]) // 2/4
-  const song: Song = { ...createEmptySong('s'), bpm: 77, sections: [{ id: 'v', name: 'VERSE', bars: 2, comment: '', intro: false, fills: [{ at: 3, beat: fill }] }] }
+  const song: Song = { ...createEmptySong('s'), bpm: 77, sections: [{ id: 'v', name: 'VERSE', bars: 2, comment: '', fills: [{ at: 3, beat: fill }] }] }
   const inputs = { metronome, metronomePattern: null, songs: [song], beats: [], voiceCues: true }
   const s = engineSettingsFor({ kind: 'songFill', songId: song.id, sectionId: 'v', at: 3 }, inputs)!
   assert.deepEqual([s.bpm, s.beatsPerBar, s.beatDivision, s.voiceCues], [77, 2, 4, false])

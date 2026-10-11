@@ -17,14 +17,14 @@ const BD = 'sound/Real Drum Kit/BD.wav'
 const CLICK = 'osc:1600'
 
 function section(name: string, bars: number, extra: Partial<Section> = {}): Section {
-  return { id: name, name, bars, comment: '', intro: false, ...extra }
+  return { id: name, name, bars, comment: '', ...extra }
 }
 
 // Песня, как её получает движок (data/resolveBeat.ts): секции и паттерн
 // песни, уже разрешённые в сэмплы. Темп и размер движку задают отдельно.
 function makeSong(extra: Partial<EngineSong> = {}): EngineSong {
   return {
-    sections: [section('VERSE', 1)], // не intro → не зацикливается
+    sections: [section('VERSE', 1)], // 1 такт — песня кончится сама
     pattern: { steps: 16, stepsPerBeat: 2, tracks: [] },
     ...extra,
   }
@@ -73,7 +73,7 @@ test('движок считает доли/такты и сам останавл
 
 test('изменение BPM во время игры применяется со следующей доли', async (t) => {
   const { engine, advance } = setup(t)
-  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setSong(makeSong({ sections: [section('V', 100)] }))
   engine.setBpm(150) // доля = 400 мс
   const times: number[] = []
   engine.onPlaybackState((s) => s.beat && times.push(Date.now()))
@@ -91,7 +91,7 @@ test('изменение BPM во время игры применяется с�
 test('деление доли (subBeat) для кольца метронома считается 0..beatDivision-1 по кругу', async (t) => {
   const { engine, advance } = setup(t)
   engine.setBeatDivision(4)
-  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setSong(makeSong({ sections: [section('V', 100)] }))
   engine.setBpm(60) // доля = 1 с, тик = 250 мс — кадры (16 мс) не пропускают тиков
   const subBeats: number[] = []
   engine.onPlaybackState((s) => subBeats.push(s.subBeat))
@@ -213,7 +213,7 @@ test('убавили долей в такте во время игры — сч�
 
 test('двойной Play, пока контекст просыпается, — один планировщик, Стоп глушит всё', async (t) => {
   const { engine, advance, played } = setup(t, { suspended: true, resumeDelayMs: 50 })
-  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setSong(makeSong({ sections: [section('V', 100)] }))
   engine.setBpm(600)
   const first = engine.start()
   const second = engine.start() // двойной тап до того, как resume() закончился
@@ -230,7 +230,7 @@ test('двойной Play, пока контекст просыпается, —
 
 test('Play, когда уже играет, ничего не перезапускает', async (t) => {
   const { engine, advance } = setup(t)
-  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setSong(makeSong({ sections: [section('V', 100)] }))
   engine.setBpm(600)
   const beats: number[] = []
   engine.onPlaybackState((s) => beats.push(s.beat))
@@ -255,7 +255,7 @@ test('Стоп, пока контекст просыпается, — игра �
 
 test('вкладку придушили — пропущенные доли не звучат пачкой, песня остаётся в своём времени', async (t) => {
   const { engine, advance, jump, played } = setup(t)
-  engine.setSong(makeSong({ sections: [section('V', 100, { intro: true })] }))
+  engine.setSong(makeSong({ sections: [section('V', 100)] }))
   engine.setBpm(600) // доля = 100 мс, такт = 400 мс
   const bars: number[] = []
   engine.onPlaybackState((s) => bars.push(s.bar))

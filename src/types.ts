@@ -93,7 +93,6 @@ export interface Section {
   name: string
   bars: number
   comment: string
-  intro: boolean
   /** Бит секции — грув на всю секцию вместо паттерна песни (идёт по кругу
    * от начала секции), копия внутри песни (как у филлов). Нет — играет
    * паттерн песни. */

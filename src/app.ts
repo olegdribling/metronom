@@ -24,7 +24,7 @@ import {
   type AppState,
 } from './state/appState.ts'
 import { onUserChange } from './data/auth.ts'
-import { engineSettingsFor, sameSource, songForEngine, type EngineSettings } from './data/engineSettings.ts'
+import { engineSettingsFor, playSong, sameSource, songForEngine, type EngineSettings } from './data/engineSettings.ts'
 import { mountMetronomeScreen } from './screens/metronomeScreen.ts'
 import { mountPlaylistScreen } from './screens/playlistScreen.ts'
 import { mountSongScreen } from './screens/songScreen.ts'
@@ -189,7 +189,12 @@ export function startApp(root: HTMLElement): void {
       isPlaying: engine.isPlaying,
       canStart: canPlay,
       activeRoute: routeKind,
-      onToggleTransport: () => (engine.isPlaying ? engine.stop() : void engine.start()),
+      // Песня — всегда с отсчёта (playSong), остальное — сразу.
+      onToggleTransport: () => {
+        if (engine.isPlaying) engine.stop()
+        else if (pageSource?.kind === 'song') void playSong(engine)
+        else void engine.start()
+      },
       onNavigate: (route) => router.navigate(ROUTE_PATHS[route]),
       notice: state.connectionError ? { text: state.connectionError, actionLabel: 'Повторить', onAction: retrySync } : undefined,
     })

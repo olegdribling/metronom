@@ -2,6 +2,8 @@
 // метронома, песни и бита всё своё, друг на друга они не влияют (решение
 // пользователя). Чистые функции — проверяются в tests/data.test.ts.
 import { Beat, EngineSong, MetronomeSettings, Pattern, PlaybackSource, Song } from '../types.ts'
+import { CONFIG } from '../config.ts'
+import type { AudioEngine } from '../engine/audioEngine.ts'
 import { resolveBeatPattern, resolveSongForEngine } from './resolveBeat.ts'
 import { emptyMetronomePattern } from './beatsLibrary.ts'
 
@@ -26,6 +28,16 @@ export interface EngineInputs {
 }
 
 export const sameSource = (a: PlaybackSource, b: PlaybackSource): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** Песня играет всегда с отсчёта (решение пользователя): CONFIG.COUNT_IN_BARS
+ * тактов — голос номера доли и щелчок, потом песня с такта fromBar (0 — с
+ * начала). Уже играет — с начала отсчёта заново. Одна на все кнопки: Play в
+ * футере на странице песни (app.ts), ▶ на секции (songScreen.ts), Play в
+ * «Концерте» (concertScreen.ts); сам отсчёт — в движке. */
+export function playSong(engine: Pick<AudioEngine, 'start' | 'stop' | 'isPlaying'>, fromBar = 0): Promise<void> {
+  if (engine.isPlaying) engine.stop()
+  return engine.start({ fromBar, countInBars: CONFIG.COUNT_IN_BARS })
+}
 
 /** null — играть нечего: песня или бит ещё не пришли из БД или удалены. */
 export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs): EngineSettings | null {

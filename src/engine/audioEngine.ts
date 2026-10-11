@@ -70,9 +70,10 @@ export interface AudioEngine {
    * номером внутри доли. */
   setBeatDivision(n: number): void
   /** Повторный вызов, пока движок запускается или играет, ничего не делает.
-   * fromBar — начать с этого такта песни (▶ на секции, songScreen.ts), перед
-   * ним countInBars тактов отсчёта: голос номера доли + акцентный щелчок.
-   * Без параметров — с начала, без отсчёта. */
+   * fromBar — начать с этого такта песни, перед ним countInBars тактов
+   * отсчёта: голос номера доли + акцентный щелчок (песни запускает playSong в
+   * data/engineSettings.ts). Без параметров — с начала, без отсчёта
+   * (метроном, бит по кругу). */
   start(opts?: { fromBar?: number; countInBars?: number }): Promise<void>
   stop(): void
   /** Проиграть один сэмпл прямо сейчас, вне расписания — прослушка в
@@ -274,8 +275,9 @@ export function createAudioEngine(): AudioEngine {
     if (!ctx || run !== runId) return
     const ct = ctx.currentTime
     const lookahead = 0.1
+    // Песня без секций (бит в редакторе, песня, где их ещё нет) играет по
+    // кругу, пока не нажмут Стоп; с секциями — до конца последней.
     const songTotalBars = currentSong ? totalBars(currentSong) : 0
-    const loopIndefinitely = currentSong ? !currentSong.sections.some((sec) => !sec.intro) : false
 
     const sectionRanges = (() => {
       let start = 0
@@ -391,16 +393,12 @@ export function createAudioEngine(): AudioEngine {
         bar += 1
         if (bar >= countInEndBar) countInEndBar = -Infinity
         if (songTotalBars > 0 && bar >= songTotalBars) {
-          if (loopIndefinitely) {
-            bar = 0
-          } else {
-            // Конец песни — в конце последней доли (nextNoteTime уже сдвинут
-            // на неё), а не в её начале: иначе экраны теряли последнюю долю
-            // (подсветка, «Концерт» открывал следующую песню на долю раньше),
-            // а Стоп по концу глушил её удары внутри доли.
-            visualQueue.push({ time: nextNoteTime, type: 'stop' })
-            return
-          }
+          // Конец песни — в конце последней доли (nextNoteTime уже сдвинут
+          // на неё), а не в её начале: иначе экраны теряли последнюю долю
+          // (подсветка, «Концерт» открывал следующую песню на долю раньше), а
+          // Стоп по концу глушил её удары внутри доли.
+          visualQueue.push({ time: nextNoteTime, type: 'stop' })
+          return
         }
       } else {
         beat += 1

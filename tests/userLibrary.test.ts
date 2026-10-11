@@ -60,7 +60,7 @@ test('старый плейлист переносится: песня — до�
   assert.equal(fake.store.get(playlistPath('p1'))!.songsMigrated, true)
   assert.equal((fake.store.get(playlistPath('p1'))!.songs as unknown[]).length, 2, 'массив не тронут')
   const doc = fake.store.get(songPath('p1', 1))!
-  assert.deepEqual((doc.sections as { id: string }[]).map((s) => s.id), ['s0', 's1'], 'секции получили id')
+  assert.deepEqual((doc.sections as { id: string }[]).map((s) => s.id), ['s1'], 'секции получили id (по позиции), вступление «1 2 3 4» убрано')
   assert.deepEqual([doc.beatsPerBar, doc.beatDivision], [4, 4], 'старой песне — 4/4')
   assert.deepEqual(lastSongs().map((s) => s.name), ['Первая', 'Вторая'], 'порядок — по времени создания (id)')
   assert.deepEqual(errors, [])

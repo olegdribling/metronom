@@ -17,13 +17,15 @@ export function newSectionId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 }
 
+// Новая песня — без секций: вступления «1 2 3 4» больше нет, перед песней
+// всегда отсчёт (playSong, решение пользователя).
 export function createEmptySong(name: string): Song {
   return {
     id: Date.now(),
     name: name.trim().slice(0, CONFIG.MAX_NAME_LENGTH) || 'Без названия',
     bpm: CONFIG.DEFAULT_BPM,
     ...DEFAULT_METER,
-    sections: [{ id: newSectionId(), name: '1 2 3 4', bars: 2, intro: true, comment: '' }],
+    sections: [],
     pattern: emptySongPattern(),
   }
 }
@@ -71,7 +73,6 @@ function normalizeSection(raw: Raw, index: number, usedIds: Set<string>): Sectio
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'VERSE',
     bars: clampBars(raw.bars),
     comment: typeof raw.comment === 'string' ? raw.comment.slice(0, CONFIG.MAX_COMMENT_LENGTH) : '',
-    intro: !!raw.intro,
   }
   // Бит секции и филлы — копии внутри песни; старые песни хранили ссылки на
   // «Биты» (beatId) — их переносит копиями embedLibraryBeats.
@@ -116,16 +117,20 @@ export function embedLibraryBeats(song: Song, beats: Beat[]): Song {
 
 /** Песня из БД → актуальная модель: id секций, такты в пределах, размер
  * такта (у старых песен его нет — 4/4), темп в пределах. Поля движка
- * (groove/fillPatterns) отбрасываются — в БД им не место. */
+ * (groove/fillPatterns) отбрасываются — в БД им не место. Вступление
+ * «1 2 3 4» (старые песни, `intro: true`) убирается — вместо него перед
+ * песней всегда отсчёт (решение пользователя); id секциям без него — по
+ * позиции вместе с ним, как и раньше, чтобы совпадали на всех устройствах. */
 export function normalizeSong(input: unknown): Song {
   const raw = (input ?? {}) as Raw
   const usedIds = new Set<string>()
+  const rawSections = (Array.isArray(raw.sections) ? raw.sections : []).map((sec) => (sec ?? {}) as Raw)
   return {
     id: Number(raw.id),
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'Без названия',
     bpm: clampBpm(raw.bpm),
     ...clampMeter(raw as Partial<Meter>),
-    sections: (Array.isArray(raw.sections) ? raw.sections : []).map((sec, i) => normalizeSection((sec ?? {}) as Raw, i, usedIds)),
+    sections: rawSections.flatMap((sec, i) => (sec.intro ? [] : [normalizeSection(sec, i, usedIds)])),
     pattern: normalizeSongPattern(raw.pattern),
   }
 }
@@ -142,15 +147,6 @@ export const sectionBeatCount = (section: Section, beatsPerBar: number): number 
  * одного такта (при 9+ долях в такте — такт на строку). Экран песни и
  * «Концерт» — одинаково. */
 export const barGridColumns = (beatsPerBar: number): number => beatsPerBar * Math.max(1, Math.floor(8 / beatsPerBar))
-
-/** «Концерт» (решение пользователя): Play — отсчёт и сразу первая настоящая
- * секция, вступление «1 2 3 4» пропускается. В песне только вступление — с
- * начала (оно играет по кругу, как на экране песни). */
-export function concertStart(song: Song): { sectionIndex: number; fromBar: number } {
-  const sectionIndex = song.sections.findIndex((s) => !s.intro)
-  if (sectionIndex < 0) return { sectionIndex: 0, fromBar: 0 }
-  return { sectionIndex, fromBar: song.sections.slice(0, sectionIndex).reduce((bars, s) => bars + s.bars, 0) }
-}
 
 /** Где песня на такте `bar` (такт от начала песни, как у движка): секция и
  * такт внутри неё (с 1). За концом песни — null. */

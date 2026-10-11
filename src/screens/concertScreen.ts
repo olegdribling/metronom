@@ -3,11 +3,12 @@
 // правок. Весь экран, без шапки и футера (app.ts), выход — долгим тапом.
 //
 // До Play: название, темп и вся структура песни; ← → — соседние песни,
-// «Список» — все песни плейлиста. Play — 2 такта отсчёта и сразу первая
-// настоящая секция (вступление «1 2 3 4» пропускается, concertStart в
-// data/songs.ts). Во время игры: текущая секция крупно и жёлтым — название,
-// комментарий, «Такт N / M» и все её доли квадратиками (прошедшие серые,
-// текущая жёлтая, под филлом — отметка; строка — как на экране песни); ниже —
+// «Список» — все песни плейлиста. Play — отсчёт и песня с начала (playSong в
+// data/engineSettings.ts — как Play и ▶ на экране песни); песню без секций
+// играть нечем — Play неактивен. Во время игры: текущая секция крупно и
+// жёлтым — название, комментарий, «Такт N / M» и все её доли квадратиками
+// (прошедшие серые, текущая жёлтая, под филлом — отметка; строка — как на
+// экране песни); ниже —
 // следующая секция тоже с квадратиками и остальные секции текстом (решение
 // пользователя); внизу — только Стоп. Песня доиграла — открыта следующая и
 // ждёт Play. Голос смены секции здесь всегда включён (engineSettings.ts).
@@ -25,10 +26,9 @@ import { onLongPress } from '../components/longPress.ts'
 import { accountGate } from '../components/signInCard.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe } from '../state/appState.ts'
-import { barGridColumns, concertStart, fillBeats, sectionAtBar, sectionBeatCount } from '../data/songs.ts'
+import { barGridColumns, fillBeats, sectionAtBar, sectionBeatCount } from '../data/songs.ts'
+import { playSong } from '../data/engineSettings.ts'
 import { PlaybackState, Section, Song } from '../types.ts'
-
-const COUNT_IN_BARS = 2
 
 export interface ConcertScreenOptions {
   /** Песня, на которой остановились в прошлый раз (в этом плейлисте). */
@@ -144,9 +144,9 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
 
   function play() {
     const song = currentSong()
-    if (!song) return
+    if (!song?.sections.length) return
     pendingStart = true
-    void engine.start({ fromBar: concertStart(song).fromBar, countInBars: COUNT_IN_BARS }).then(render)
+    void playSong(engine).then(render)
   }
 
   function stop() {
@@ -154,10 +154,11 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
     engine.stop()
   }
 
+  // В отсчёте текущая — первая секция (она следующая по счёту).
   function positionOf(song: Song, playback: PlaybackState): Position | null {
-    const first = concertStart(song).sectionIndex
-    if (pendingStart) return { sectionIndex: first, barInSection: 0, beat: 0, countIn: true }
-    if (playback.bar < 0) return { sectionIndex: first, barInSection: 0, beat: playback.beat, countIn: true }
+    if (!song.sections.length) return null
+    if (pendingStart) return { sectionIndex: 0, barInSection: 0, beat: 0, countIn: true }
+    if (playback.bar < 0) return { sectionIndex: 0, barInSection: 0, beat: playback.beat, countIn: true }
     const at = sectionAtBar(song, playback.bar)
     return at ? { ...at, beat: playback.beat, countIn: false } : null
   }
@@ -343,10 +344,11 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
         h('h1', { className: 'concert__song' }, song.name),
         h('div', { className: 'concert__tempo' }, `${song.bpm} BPM · ${song.beatsPerBar}/${song.beatDivision}`)
       )
-      setList(`structure|${song.id}`, ...song.sections.slice(concertStart(song).sectionIndex).map((sec) => sectionRow(song, sec)))
-      setControls(`idle|${index}|${last}|${engine.canStart}`, () => [
+      const playable = engine.canStart && song.sections.length > 0
+      setList(`structure|${song.id}`, ...song.sections.map((sec) => sectionRow(song, sec)))
+      setControls(`idle|${index}|${last}|${playable}`, () => [
         controlButton('caret-left', () => selectIndex(index - 1), { disabled: index <= 0 }),
-        controlButton('play', play, { main: true, disabled: !engine.canStart }),
+        controlButton('play', play, { main: true, disabled: !playable }),
         controlButton('caret-right', () => selectIndex(index + 1), { disabled: index >= last }),
       ])
       return

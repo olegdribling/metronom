@@ -37,6 +37,7 @@ import { CONFIG, SECTION_TYPES } from '../config.ts'
 import { Beat, PlaybackState, Section, SectionFormData, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, setDraft, songView } from '../state/appState.ts'
+import { playSong } from '../data/engineSettings.ts'
 import {
   barGridColumns,
   beatLengthInBeats,
@@ -202,7 +203,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   function addSection() {
     const song = currentSong()
     if (!song) return
-    const section = withForm({ id: newSectionId(), name: '', bars: 1, comment: '', intro: false }, newSection)
+    const section = withForm({ id: newSectionId(), name: '', bars: 1, comment: '' }, newSection)
     showAddForm = false
     newSection = emptySectionForm()
     updateSong({ sections: [...song.sections, section] })
@@ -211,7 +212,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   function removeSection(sectionId: string) {
     const song = currentSong()
     const sec = song?.sections.find((s) => s.id === sectionId)
-    if (!song || !sec || sec.intro) return
+    if (!song || !sec) return
     if (!confirm(`Удалить секцию "${sec.name}"?`)) return
     if (fillPicker?.sectionId === sectionId) fillPicker = null
     if (editingId === sectionId) editingId = null
@@ -237,16 +238,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     updateSong({ sections: pruneFills(sections, song.beatsPerBar) })
   }
 
-  // ▶ на секции: играть с неё, перед ней 2 такта отсчёта (голос + щелчок,
-  // решение пользователя); уже играет — перезапуск с этой секции.
-  function playFrom(firstBar: number) {
-    engine.stop()
-    void engine.start({ fromBar: firstBar, countInBars: 2 })
-  }
-
   function reorderSections(from: number, to: number) {
     const song = currentSong()
-    if (!song || from === to || song.sections[to]?.intro) return
+    if (!song || from === to) return
     const sections = [...song.sections]
     const [moved] = sections.splice(from, 1)
     sections.splice(to, 0, moved)
@@ -418,9 +412,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       'div',
       {
         className: 'card',
-        draggable: !sec.intro && !locked(),
+        draggable: !locked(),
         dataset: { sectionId: sec.id },
-        onDragStart: () => (dragFrom = sec.intro ? null : index),
+        onDragStart: () => (dragFrom = index),
         onDragOver: (e: DragEvent) => e.preventDefault(),
         onDrop: (e: DragEvent) => {
           e.preventDefault()
@@ -431,18 +425,18 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       h(
         'div',
         { className: 'row' },
-        sec.intro ? null : icon('dots-six-vertical'),
+        icon('dots-six-vertical'),
         h('span', { className: 'text-bold' }, sec.name),
         h('span', { className: 'badge' }, `${sec.bars} такт.`),
-        sec.intro
-          ? null
-          : h(
-              'div',
-              { className: 'row row--1 push-right' },
-              iconButton('play', { onClick: () => playFrom(firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
-              iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию', disabled: locked() }),
-              iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию', disabled: locked() })
-            )
+        h(
+          'div',
+          { className: 'row row--1 push-right' },
+          // ▶ — играть с этой секции: перед ней отсчёт, как всегда у песни
+          // (playSong); уже играет — заново с неё.
+          iconButton('play', { onClick: () => void playSong(engine, firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
+          iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию', disabled: locked() }),
+          iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию', disabled: locked() })
+        )
       ),
       sec.comment ? h('div', { className: 'mt-2 text-bold' }, sec.comment) : null,
       sec.beat ? h('div', { className: 'mt-2 text-small text-sub' }, `Бит: «${sec.beat.name}»`) : null,
