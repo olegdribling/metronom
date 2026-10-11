@@ -37,7 +37,7 @@ import { Beat, DrumRole, Song } from '../types.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { beatView, commitDraft, getState, subscribe, saveMetronomePattern, setDraft, setMetronome, songView } from '../state/appState.ts'
 import { emptyMetronomePattern } from '../data/beatsLibrary.ts'
-import { clampBpm } from '../data/songs.ts'
+import { clampBpm, spreadLinked } from '../data/songs.ts'
 import { fitMeter, meterOptions, type BeatMeter } from '../data/beatMeter.ts'
 
 // Что правит редактор: бит из библиотеки или паттерн песни (бит внутри
@@ -93,14 +93,14 @@ export function songFillTarget(songId: number, sectionId: string, at: number): B
   }
   return {
     get: () => song()?.sections.find((s) => s.id === sectionId)?.fills?.find((f) => f.at === at)?.beat,
+    // Секция связана с такими же (решение пользователя) — правка и в них.
     save: (beat) => {
       const current = song()
       if (!current) return
-      update({
-        sections: current.sections.map((sec) =>
-          sec.id === sectionId ? { ...sec, fills: (sec.fills ?? []).map((f) => (f.at === at ? { at, beat } : f)) } : sec
-        ),
-      })
+      const sections = current.sections.map((sec) =>
+        sec.id === sectionId ? { ...sec, fills: (sec.fills ?? []).map((f) => (f.at === at ? { at, beat } : f)) } : sec
+      )
+      setDraft({ kind: 'song', song: spreadLinked({ ...current, sections }, sectionId) })
     },
     loaded: () => getState().songsLoaded,
     notFoundText: 'Филл не найден.',

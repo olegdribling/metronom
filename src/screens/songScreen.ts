@@ -25,12 +25,18 @@
 // шапке закрыт — темп, размер, секции и филлы только показываются, играть
 // можно; открыт — на всю работу с песней, в том числе в её филлах.
 //
+// Секции с одним названием связаны — одна настройка на всех (правка любой
+// уходит во все, spreadLinked), цепочка на карточке отвязывает одну; долгий
+// тап по секции выделяет её — там «Копировать» / «Вставить» (решение
+// пользователя).
+//
 // Секции везде — по id, не по индексу: индексы сдвигаются при удалении,
 // перетаскивании и правке с другого устройства, и открытая форма правки
 // иначе сохранялась бы в соседнюю секцию.
 import { h, keepDigits, mount } from '../dom.ts'
 import { button, iconButton } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
+import { onLongPress } from '../components/longPress.ts'
 import { createMeterField, createTempoField } from '../components/tempoControls.ts'
 import { icon } from '../icons.ts'
 import { CONFIG, SECTION_TYPES } from '../config.ts'
@@ -39,6 +45,7 @@ import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe, setDraft, songView } from '../state/appState.ts'
 import { playSong } from '../data/engineSettings.ts'
 import {
+  adoptLinked,
   barGridColumns,
   beatLengthInBeats,
   clampBars,
@@ -52,11 +59,17 @@ import {
   sectionBeatCount,
   sliceForBeat,
   songMeter,
+  spreadLinked,
   squareContent,
   withSongMeter,
 } from '../data/songs.ts'
 
 const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '', beatChoice: '' })
+
+// Скопированная секция («Копировать» на выделенной) — её установки (решение
+// пользователя). Живёт, пока открыто приложение: вставить можно и в другую
+// песню. Только внутри приложения, не в системный буфер обмена.
+let sectionClipboard: Section | null = null
 
 export interface SongScreenOptions {
   onOpenPattern: () => void
@@ -82,8 +95,8 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   // Открытое меню квадратика: секция, доля (от начала секции, с 0) и открыт
   // ли в нём список битов («Из списка»).
   let fillPicker: { sectionId: string; at: number; list: boolean } | null = null
-  // Открытое «Копировать в…»: из какой секции и куда (отмеченные секции).
-  let copyPanel: { sectionId: string; targets: Set<string> } | null = null
+  // Выделенная долгим тапом секция — на ней «Копировать» и «Вставить».
+  let selectedId: string | null = null
   let focusPending = opts.focusSectionId
 
   function currentSong(): Song | undefined {
@@ -134,10 +147,13 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     )
   }
 
+  // Правка секции — и во все связанные с ней (одно название — одна
+  // настройка, решение пользователя; spreadLinked в data/songs.ts).
   function updateSection(sectionId: string, patch: Partial<Section>) {
     const song = currentSong()
     if (!song) return
-    updateSong({ sections: song.sections.map((sec) => (sec.id === sectionId ? { ...sec, ...patch } : sec)) })
+    const next = { ...song, sections: song.sections.map((sec) => (sec.id === sectionId ? { ...sec, ...patch } : sec)) }
+    setDraft({ kind: 'song', song: spreadLinked(next, sectionId) })
   }
 
   const sectionById = (sectionId: string) => currentSong()?.sections.find((s) => s.id === sectionId)
@@ -203,13 +219,84 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     return { ...rest, name: data.name, bars: clampBars(data.bars), comment: data.comment, ...(beat ? { beat } : {}) }
   }
 
+  // Новая секция того вида, что уже есть, встаёт к связанным — с их
+  // настройками (форма их и показывает, prefillFromLinked); изменил в форме —
+  // меняются все.
   function addSection() {
     const song = currentSong()
     if (!song) return
-    const section = withForm({ id: newSectionId(), name: '', bars: 1, comment: '' }, newSection)
+    const id = newSectionId()
+    const joined = adoptLinked({ ...song, sections: [...song.sections, { id, name: newSection.name, bars: 1, comment: '' }] }, id)
+    const sections = pruneFills(joined.sections.map((sec) => (sec.id === id ? withForm(sec, newSection) : sec)), song.beatsPerBar)
     showAddForm = false
     newSection = emptySectionForm()
-    updateSong({ sections: [...song.sections, section] })
+    setDraft({ kind: 'song', song: spreadLinked({ ...joined, sections }, id) })
+  }
+
+  // Форма: выбрали вид, который уже есть (VERSE при других VERSE), — в ней
+  // сразу их настройки: секция встанет к ним. Вернули прежнее название —
+  // снова её собственные. Отвязанная живёт своей.
+  function prefillFromLinked(data: SectionFormData, sectionId: string | null) {
+    const song = currentSong()
+    const sec = sectionId ? sectionById(sectionId) : undefined
+    if (!song || sec?.own) return
+    const from = sec && sec.name === data.name ? sec : song.sections.find((s) => s.id !== sectionId && s.name === data.name && !s.own)
+    if (!from) return
+    data.bars = from.bars
+    data.comment = from.comment
+    data.beatChoice = from.beat ? 'own' : ''
+  }
+
+  // Бит, который останется у секции при «свой бит» в форме: её собственный,
+  // а если она встаёт к связанным — их.
+  function formOwnBeat(data: SectionFormData, sectionId: string | null): Beat | undefined {
+    const sec = sectionId ? sectionById(sectionId) : undefined
+    if (sec && (sec.own || sec.name === data.name)) return sec.beat
+    return currentSong()?.sections.find((s) => s.id !== sectionId && s.name === data.name && !s.own)?.beat ?? sec?.beat
+  }
+
+  // Цепочка на карточке (решение пользователя): отвязать — секция живёт своей
+  // настройкой (четвёртый куплет иначе); привязать — снова как остальные
+  // такие же.
+  function toggleLink(sectionId: string) {
+    const song = currentSong()
+    const sec = sectionById(sectionId)
+    if (!song || !sec) return
+    const { own: _own, ...linked } = sec
+    const next = { ...song, sections: song.sections.map((s) => (s.id !== sectionId ? s : sec.own ? linked : { ...s, own: true })) }
+    setDraft({ kind: 'song', song: sec.own ? adoptLinked(next, sectionId) : next })
+  }
+
+  // «Копировать» / «Вставить» на выделенной секции (решение пользователя):
+  // в буфер — её установки; вставка — в выделенную (и во все связанные с ней),
+  // id и название — её.
+  function copySection(sectionId: string) {
+    const sec = sectionById(sectionId)
+    if (!sec) return
+    sectionClipboard = copySectionSettings({ id: '', name: sec.name, bars: sec.bars, comment: '' }, sec)
+    selectedId = null
+    render()
+  }
+
+  function pasteInto(sectionId: string) {
+    const song = currentSong()
+    const clip = sectionClipboard
+    selectedId = null
+    if (!song || !clip) return render()
+    // Из песни с другим размером — брейки за концом секции уходят.
+    const sections = pruneFills(song.sections.map((s) => (s.id === sectionId ? copySectionSettings(s, clip) : s)), song.beatsPerBar)
+    setDraft({ kind: 'song', song: spreadLinked({ ...song, sections }, sectionId) })
+  }
+
+  // Снять выделение — снова долгий тап; после «Копировать»/«Вставить» оно
+  // снимается само.
+  function selectionBar(sec: Section): HTMLElement {
+    return h(
+      'div',
+      { className: 'row row--3 row--wrap mt-2' },
+      button('Копировать', { iconName: 'copy', onClick: () => copySection(sec.id) }),
+      button('Вставить', { variant: 'accent', iconName: 'clipboard-text', disabled: !sectionClipboard || locked(), onClick: () => pasteInto(sec.id) })
+    )
   }
 
   function removeSection(sectionId: string) {
@@ -222,67 +309,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     updateSong({ sections: song.sections.filter((s) => s.id !== sectionId) })
   }
 
-  // «Копировать в…» (решение пользователя): все установки секции — в
-  // отмеченные секции; те же по названию (другие VERSE) отмечены сразу —
-  // настроил один куплет и разнёс по остальным. Повторный тап — закрыть.
-  function toggleCopy(sectionId: string) {
-    const song = currentSong()
-    const src = sectionById(sectionId)
-    if (!song || !src) return
-    const same = song.sections.filter((s) => s.id !== sectionId && s.name === src.name).map((s) => s.id)
-    copyPanel = copyPanel?.sectionId === sectionId ? null : { sectionId, targets: new Set(same) }
-    editingId = null
-    fillPicker = null
-    render()
-  }
-
-  function copyToTargets() {
-    const song = currentSong()
-    const src = copyPanel ? sectionById(copyPanel.sectionId) : undefined
-    const targets = copyPanel?.targets
-    copyPanel = null
-    if (!song || !src || !targets?.size) {
-      render()
-      return
-    }
-    updateSong({ sections: song.sections.map((sec) => (sec.id !== src.id && targets.has(sec.id) ? copySectionSettings(sec, src) : sec)) })
-  }
-
-  function renderCopyPanel(src: Section, targets: Set<string>): HTMLElement {
-    const song = currentSong()!
-    return h(
-      'div',
-      { className: 'card card--inset stack stack--2' },
-      h('span', { className: 'text-small text-sub' }, 'Копировать в:'),
-      ...song.sections.flatMap((sec, i) =>
-        sec.id === src.id
-          ? []
-          : [
-              h(
-                'label',
-                { className: 'row checkbox-row' },
-                h('input', {
-                  type: 'checkbox',
-                  checked: targets.has(sec.id),
-                  onChange: (e: Event) => ((e.target as HTMLInputElement).checked ? targets.add(sec.id) : targets.delete(sec.id)),
-                }),
-                h('span', {}, `${sec.name} (${i + 1}-я)`)
-              ),
-            ]
-      ),
-      h(
-        'div',
-        { className: 'row row--3' },
-        button('Скопировать', { variant: 'accent', iconName: 'copy', onClick: copyToTargets }),
-        button('', { iconName: 'x', onClick: () => { copyPanel = null; render() } })
-      )
-    )
-  }
-
   function startEdit(sectionId: string) {
     const sec = sectionById(sectionId)
     if (!sec) return
-    copyPanel = null
     editingId = sectionId
     editData = { name: sec.name || 'VERSE', bars: sec.bars || 1, comment: sec.comment || '', beatChoice: sec.beat ? 'own' : '' }
     showAddForm = false
@@ -294,9 +323,16 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     if (!song || editingId === null) return
     const id = editingId
     editingId = null
+    const before = sectionById(id)
+    // Переименовали в вид, который уже есть, — секция встаёт к связанным
+    // (их настройки форма уже показала, prefillFromLinked).
+    const joined =
+      before && !before.own && before.name !== editData.name
+        ? adoptLinked({ ...song, sections: song.sections.map((s) => (s.id === id ? { ...s, name: editData.name } : s)) }, id)
+        : song
     // Секцию укоротили — филлы, начинавшиеся за её новым концом, убираем.
-    const sections = song.sections.map((sec) => (sec.id === id ? withForm(sec, editData) : sec))
-    updateSong({ sections: pruneFills(sections, song.beatsPerBar) })
+    const sections = pruneFills(joined.sections.map((sec) => (sec.id === id ? withForm(sec, editData) : sec)), song.beatsPerBar)
+    setDraft({ kind: 'song', song: spreadLinked({ ...joined, sections }, id) })
   }
 
   function reorderSections(from: number, to: number) {
@@ -313,8 +349,10 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   // закрывалась после каждого символа. Внешние перерисовки (снимок
   // Firestore посреди ввода) переживают фокус и курсор благодаря ключам
   // полей (mount() в dom.ts).
-  // own — бит этой секции (форма правки): его можно оставить.
-  function sectionForm(keyPrefix: string, data: SectionFormData, onSubmit: () => void, onCancel: () => void, own?: Beat) {
+  // sectionId — правка этой секции (null — новая); её бит («свой») можно
+  // оставить.
+  function sectionForm(keyPrefix: string, data: SectionFormData, onSubmit: () => void, onCancel: () => void, sectionId: string | null) {
+    const own = formOwnBeat(data, sectionId)
     const barsInput = h('input', {
       type: 'text',
       className: 'input input--center',
@@ -345,7 +383,11 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         {
           className: 'input',
           key: `${keyPrefix}-name`,
-          onChange: (e: Event) => (data.name = (e.target as HTMLSelectElement).value),
+          onChange: (e: Event) => {
+            data.name = (e.target as HTMLSelectElement).value
+            prefillFromLinked(data, sectionId)
+            render()
+          },
         },
         ...SECTION_TYPES.map((t) => h('option', { value: t, selected: t === data.name }, t))
       ),
@@ -412,7 +454,6 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         onClick: () => {
           const same = fillPicker?.sectionId === sec.id && fillPicker.at === i
           fillPicker = same ? null : { sectionId: sec.id, at: i, list: false }
-          copyPanel = null
           render()
         },
       })
@@ -470,12 +511,12 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   }
 
   function sectionCard(sec: Section, index: number, beatsPerBar: number, firstBar: number) {
-    // Копировать есть куда — в песне есть другие секции.
-    const hasOthers = (currentSong()?.sections.length ?? 0) > 1
-    return h(
+    // Цепочка — только когда есть такие же по названию: связывать есть с кем.
+    const hasTwins = !!currentSong()?.sections.some((s) => s.id !== sec.id && s.name === sec.name)
+    const card = h(
       'div',
       {
-        className: 'card',
+        className: `card${selectedId === sec.id ? ' card--selected' : ''}`,
         draggable: !locked(),
         dataset: { sectionId: sec.id },
         onDragStart: () => (dragFrom = index),
@@ -488,28 +529,40 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       },
       h(
         'div',
-        { className: 'row' },
+        { className: 'row row--wrap' },
         icon('dots-six-vertical'),
-        h('span', { className: 'text-bold' }, sec.name),
-        h('span', { className: 'badge' }, `${sec.bars} такт.`),
+        // Название и такты — столбиком: так кнопки (с цепочкой их четыре)
+        // помещаются в строку и на узком телефоне; не влезли — переносятся.
+        h(
+          'div',
+          { className: 'stack stack--1 stack--start min-w-0' },
+          h('span', { className: 'text-bold' }, sec.name),
+          h('span', { className: 'badge' }, `${sec.bars} такт.`)
+        ),
         h(
           'div',
           { className: 'row row--1 push-right' },
           // ▶ — играть с этой секции: перед ней отсчёт, как всегда у песни
           // (playSong); уже играет — заново с неё.
+          hasTwins
+            ? iconButton(sec.own ? 'link-simple-break' : 'link-simple', {
+                onClick: () => toggleLink(sec.id),
+                ariaLabel: sec.own ? 'Привязать к таким же' : 'Отвязать',
+                disabled: locked(),
+              })
+            : null,
           iconButton('play', { onClick: () => void playSong(engine, firstBar), ariaLabel: 'Играть с этой секции', disabled: !getState().samplesLoaded }),
-          iconButton('copy', { onClick: () => toggleCopy(sec.id), ariaLabel: 'Копировать в…', disabled: locked() || !hasOthers }),
           iconButton('pencil-simple', { onClick: () => startEdit(sec.id), ariaLabel: 'Редактировать секцию', disabled: locked() }),
           iconButton('trash', { variant: 'danger', onClick: () => removeSection(sec.id), ariaLabel: 'Удалить секцию', disabled: locked() })
         )
       ),
+      selectedId === sec.id ? selectionBar(sec) : null,
       sec.comment ? h('div', { className: 'mt-2 text-bold' }, sec.comment) : null,
       sec.beat ? h('div', { className: 'mt-2 text-small text-sub' }, `Бит: «${sec.beat.name}»`) : null,
       // Филлы видны только отметками на квадратиках — без строк «Филл … с
       // доли N» (решение пользователя).
       barGrid(sec, beatsPerBar, firstBar),
       fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at, fillPicker.list, beatsPerBar) : null,
-      copyPanel?.sectionId === sec.id ? renderCopyPanel(sec, copyPanel.targets) : null,
       editingId === sec.id
         ? sectionForm(
             `edit-${sec.id}`,
@@ -519,10 +572,21 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
               editingId = null
               render()
             },
-            sec.beat
+            sec.id
           )
         : null
     )
+    // Долгий тап по секции — выделить её (там «Копировать» / «Вставить»);
+    // по её кнопкам и квадратикам — их обычное действие.
+    onLongPress(
+      card,
+      () => {
+        selectedId = selectedId === sec.id ? null : sec.id
+        render()
+      },
+      'button, input, select, label'
+    )
+    return card
   }
 
   function render() {
@@ -548,12 +612,12 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     // переезжают на соседнюю.
     if (editingId !== null && !song.sections.some((s) => s.id === editingId)) editingId = null
     if (fillPicker && !song.sections.some((s) => s.id === fillPicker!.sectionId)) fillPicker = null
-    if (copyPanel && !song.sections.some((s) => s.id === copyPanel!.sectionId)) copyPanel = null
-    // Замок закрыли — открытые формы, выбор филла и копирование закрываются.
+    if (selectedId && !song.sections.some((s) => s.id === selectedId)) selectedId = null
+    // Замок закрыли — открытые формы и выбор филла закрываются (выделение
+    // остаётся: копировать можно, вставить — нет).
     if (locked()) {
       editingId = null
       fillPicker = null
-      copyPanel = null
       showAddForm = false
     }
 
@@ -571,16 +635,24 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         tempoRow(song),
         ...sectionCards,
         showAddForm
-          ? sectionForm('new', newSection, addSection, () => {
-              showAddForm = false
-              render()
-            })
+          ? sectionForm(
+              'new',
+              newSection,
+              addSection,
+              () => {
+                showAddForm = false
+                render()
+              },
+              null
+            )
           : button('Добавить секцию', {
               iconName: 'plus',
               disabled: locked(),
               onClick: () => {
                 showAddForm = true
                 editingId = null
+                newSection = emptySectionForm()
+                prefillFromLinked(newSection, null)
                 render()
               },
             }),

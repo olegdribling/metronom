@@ -16,6 +16,7 @@
    .card               — карточка (секция песни, панель настроек)
    .card--active       — карточка текущей воспроизводимой секции
    .card--inset        — карточка внутри карточки (выбор филла в секции)
+   .card--selected     — выделенная долгим тапом секция («Копировать / Вставить»)
    .input               — поле ввода / select; --center — число по центру
    .list-item          — строка списка + красная корзина справа
                          (components/deletableRow.ts)
@@ -59,7 +60,8 @@
                          чёрный фон, крупно; __top, __main, __list, __controls
 
    Раскладка и текст — вместо инлайн-стилей в экранах:
-   .stack              — колонка с отступом 12px (--1/--2/--4/--6 — другие отступы)
+   .stack              — колонка с отступом 12px (--1/--2/--4/--6 — другие отступы,
+                         --start — дети по левому краю, не во всю ширину)
    .row                — строка по центру с отступом 8px (--1/--3 — отступы,
                          --wrap, --between, --center)
    .grow, .min-w-0, .push-right, .mt-1, .mt-2
@@ -173,6 +175,11 @@
 .card--active {
   background: var(--color-surface-active);
   border: 2px solid var(--color-border-accent);
+}
+/* Выделенная секция — синяя обводка: не путать с играющей (--active). */
+.card--selected {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 .card--inset {
   margin-top: var(--space-2);
@@ -1149,6 +1156,7 @@
 .stack--2 { gap: var(--space-2); }
 .stack--4 { gap: var(--space-4); }
 .stack--6 { gap: var(--space-6); }
+.stack--start { align-items: flex-start; }
 
 .row {
   display: flex;

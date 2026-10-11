@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { fitMeter, meterOptions } from '../src/data/beatMeter.ts'
 import { normalizeBeat } from '../src/data/beatsLibrary.ts'
 import {
+  adoptLinked,
   clampBars,
   copyBeat,
   copySectionSettings,
@@ -16,6 +17,7 @@ import {
   pruneFills,
   sectionAtBar,
   sliceForBeat,
+  spreadLinked,
   squareContent,
   withSongMeter,
 } from '../src/data/songs.ts'
@@ -418,4 +420,34 @@ test('«Копировать в…»: такты, бит, брейки и ком
 
   const plain = copySectionSettings(target, { id: 'c', name: 'CHORUS', bars: 2, comment: '' })
   assert.deepEqual([plain.bars, plain.comment, 'beat' in plain, 'fills' in plain, 'beatId' in plain], [2, '', false, false, false], 'без бита и брейков — у цели их тоже нет')
+})
+
+test('связанные секции: правка одной — во все такие же, отвязанная живёт своей', () => {
+  const groove = beat('g', [true, false, false, false])
+  const sec = (id: string, name: string, extra = {}) => ({ id, name, bars: 4, comment: '', ...extra })
+  const song: Song = {
+    ...createEmptySong('s'),
+    sections: [sec('v1', 'VERSE'), sec('c1', 'CHORUS'), sec('v2', 'VERSE'), sec('v3', 'VERSE', { own: true, bars: 12 }), sec('v4', 'VERSE')],
+  }
+  // поправили первый куплет: 8 тактов, бит, комментарий
+  const edited: Song = { ...song, sections: song.sections.map((s) => (s.id === 'v1' ? { ...s, bars: 8, comment: 'Тихо', beat: groove } : s)) }
+  const next = spreadLinked(edited, 'v1')
+  const by = (id: string) => next.sections.find((s) => s.id === id)!
+  assert.deepEqual([by('v2').bars, by('v2').comment, by('v2').beat?.tracks], [8, 'Тихо', groove.tracks], 'связанный куплет — как поправленный')
+  assert.deepEqual([by('v4').bars, by('v4').comment], [8, 'Тихо'])
+  assert.notEqual(by('v2').beat, by('v1').beat, 'бит — своя копия')
+  assert.deepEqual([by('v3').bars, by('v3').comment, by('v3').beat], [12, '', undefined], 'отвязанный не тронут')
+  assert.equal(by('c1').bars, 4, 'другой вид не тронут')
+  assert.equal(spreadLinked(edited, 'v3'), edited, 'правка отвязанной — только она')
+  assert.equal(spreadLinked(edited, 'c1'), edited, 'единственная такая — песня та же')
+
+  // новая секция того же вида встаёт к связанным; привязанная снова — тоже
+  const added = adoptLinked({ ...next, sections: [...next.sections, sec('v5', 'VERSE')] }, 'v5')
+  assert.deepEqual([added.sections.at(-1)!.bars, added.sections.at(-1)!.comment], [8, 'Тихо'])
+  const relinked = adoptLinked({ ...next, sections: next.sections.map((s) => (s.id === 'v3' ? { id: s.id, name: s.name, bars: s.bars, comment: s.comment } : s)) }, 'v3')
+  assert.equal(relinked.sections.find((s) => s.id === 'v3')!.bars, 8, 'привязали — снова как остальные')
+  assert.equal(adoptLinked(next, 'c1'), next, 'связанных нет — та же песня')
+
+  const raw = normalizeSong({ id: 1, sections: [{ id: 'a', name: 'VERSE', bars: 2, own: true }, { id: 'b', name: 'VERSE', bars: 2, own: 'да' }] })
+  assert.deepEqual(raw.sections.map((s) => s.own ?? false), [true, false], '«отвязана» хранится')
 })

@@ -74,6 +74,7 @@ function normalizeSection(raw: Raw, index: number, usedIds: Set<string>): Sectio
     bars: clampBars(raw.bars),
     comment: typeof raw.comment === 'string' ? raw.comment.slice(0, CONFIG.MAX_COMMENT_LENGTH) : '',
   }
+  if (raw.own === true) section.own = true
   // Бит секции и филлы — копии внутри песни; старые песни хранили ссылки на
   // «Биты» (beatId) — их переносит копиями embedLibraryBeats.
   if (isRaw(raw.beat)) section.beat = normalizeSongBeat(raw.beat)
@@ -115,10 +116,10 @@ export function embedLibraryBeats(song: Song, beats: Beat[]): Song {
   }
 }
 
-/** «Копировать в…» на экране песни (решение пользователя): все установки
- * секции src — такты, бит секции, брейки, комментарий — в секцию target; id
- * и название остаются её. Биты — свои копии: правка брейка в одной секции
- * потом не меняет другую. */
+/** Установки секции src — такты, бит секции, брейки, комментарий — в секцию
+ * target (вставка скопированной секции, связанные секции); id, название и
+ * «отвязана» остаются её. Биты — свои копии: правка брейка в одной секции
+ * потом не меняет другую сама по себе. */
 export function copySectionSettings(target: Section, src: Section): Section {
   const { beat: _beat, beatId: _link, fills: _fills, ...rest } = target
   const next: Section = { ...rest, bars: src.bars, comment: src.comment }
@@ -127,6 +128,27 @@ export function copySectionSettings(target: Section, src: Section): Section {
   const fills = (src.fills ?? []).map((f): SectionFill => (f.beat ? { at: f.at, beat: copyBeat(f.beat) } : { ...f }))
   if (fills.length) next.fills = fills
   return next
+}
+
+/** Связанные секции (решение пользователя): одно название — одна настройка
+ * (такты, бит, брейки, комментарий), отвязанные (own) — не в счёт. */
+export const isLinkedWith = (a: Section, b: Section): boolean => a.id !== b.id && a.name === b.name && !a.own && !b.own
+
+/** Правка секции — во все связанные с ней (тот же вид, что у неё). Отвязанная
+ * или единственная такая — песня та же. */
+export function spreadLinked(song: Song, sectionId: string): Song {
+  const src = song.sections.find((s) => s.id === sectionId)
+  if (!src || !song.sections.some((s) => isLinkedWith(s, src))) return song
+  return { ...song, sections: song.sections.map((s) => (isLinkedWith(s, src) ? copySectionSettings(s, src) : s)) }
+}
+
+/** Секция встаёт к связанным (добавили, переименовали, снова привязали) —
+ * берёт их настройки (первой из них). Связанных нет — песня та же. */
+export function adoptLinked(song: Song, sectionId: string): Song {
+  const sec = song.sections.find((s) => s.id === sectionId)
+  const group = sec ? song.sections.find((s) => isLinkedWith(s, sec)) : undefined
+  if (!sec || !group) return song
+  return { ...song, sections: song.sections.map((s) => (s.id === sectionId ? copySectionSettings(s, group) : s)) }
 }
 
 /** Песня из БД → актуальная модель: id секций, такты в пределах, размер
