@@ -90,6 +90,9 @@ export interface MeterFieldOptions {
   align?: 'center' | 'end'
   /** Закрыт замок страницы — бейдж только показывает размер. */
   disabled?: () => boolean
+  /** Подписи панели — свои у страницы (метроном — по-английски); по
+   * умолчанию «Долей в такте», «Деление доли», «Готово». */
+  labels?: { beats: string; division: string; done: string }
 }
 
 export interface MeterField {
@@ -99,6 +102,7 @@ export interface MeterField {
 // Бейдж «N/M» (.dial__meter): тап — панель с «Долей в такте» и «Деление
 // доли».
 export function createMeterField(opts: MeterFieldOptions): MeterField {
+  const labels = opts.labels ?? { beats: 'Долей в такте', division: 'Деление доли', done: 'Готово' }
   let open = false
   const toggle = (next: boolean) => {
     open = next
@@ -135,9 +139,9 @@ export function createMeterField(opts: MeterFieldOptions): MeterField {
         h(
           'div',
           { className: `card stack dial__meter-editor${opts.align === 'end' ? ' dial__meter-editor--end' : ''}` },
-          stepRow('Долей в такте', meter.beatsPerBar, (v) => opts.set({ ...meter, beatsPerBar: v })),
-          stepRow('Деление доли', meter.beatDivision, (v) => opts.set({ ...meter, beatDivision: v })),
-          button('Готово', { variant: 'accent', onClick: () => toggle(false) })
+          stepRow(labels.beats, meter.beatsPerBar, (v) => opts.set({ ...meter, beatsPerBar: v })),
+          stepRow(labels.division, meter.beatDivision, (v) => opts.set({ ...meter, beatDivision: v })),
+          button(labels.done, { variant: 'accent', onClick: () => toggle(false) })
         )
       )
     },

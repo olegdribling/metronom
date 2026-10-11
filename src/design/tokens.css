@@ -2,65 +2,81 @@
    отступов, радиусов и теней. Компоненты используют только эти переменные,
    никаких магических чисел/цветов в компонентах (Правила проектирования, п.2).
 
-   Тема переключается атрибутом data-theme на <html>. Сейчас есть только
-   Minimal — добавление light/dark будет ещё одним блоком
+   Тема переключается атрибутом data-theme на <html>. Тема одна — «мягкий
+   материал» (2026-10-11, по референсу пользователя — плагин Retrograde):
+   светло-серый фон, элементы выдавлены из того же материала (выпуклые —
+   светлая тень сверху-слева и тёмная снизу-справа, вдавленные — наоборот),
+   тонкие серые обводки-пилюли, оранжевый акцент. Ключ темы остался
+   'minimal' (так он записан у пользователей). Новая тема — ещё один блок
    [data-theme="..."] ниже, без переделки компонентов. */
 
 :root,
 [data-theme='minimal'] {
-  /* Поверхности */
-  --color-bg: #ffffff;
-  --color-surface: #f9fafb;
-  --color-surface-active: #ffffff;
-  --color-border: #d1d5db;
-  --color-border-strong: #9ca3af;
-  --color-border-accent: #374151;
-  --color-border-danger: #fca5a5;
+  /* Поверхности: фон — материал, surface — выпуклое (карточки, строки),
+     sunken — вдавленное (поля ввода, клетки). */
+  --color-bg: #eceef2;
+  --color-surface: #f4f5f8;
+  --color-surface-active: #f8f9fb;
+  --color-surface-sunken: #e5e8ed;
+  --color-border: #d3d7de;
+  --color-border-strong: #b4bac3;
+  --color-border-accent: #4a505a;
+  --color-border-danger: #efb3a7;
 
   /* Текст */
-  --color-text: #111827;
-  --color-text-sub: #4b5563;
-  --color-text-muted: #9ca3af;
-  --color-text-accent: #1f2937;
-  --color-text-danger: #dc2626;
+  --color-text: #3a3f47;
+  --color-text-sub: #6f757e;
+  --color-text-muted: #a4aab2;
+  --color-text-danger: #d24b3c;
   --color-text-on-accent: #ffffff;
 
   /* Акценты и состояния */
-  --color-accent: #1f2937;
-  --color-accent-hover: #374151;
-  --color-danger: #dc2626;
-  --color-danger-surface-hover: #fef2f2;
-  --color-focus-ring: #2563eb;
+  --color-accent: #ec6a1f;
+  --color-accent-hover: #f27d37;
+  --color-accent-soft: rgba(236, 106, 31, 0.12);
+  --color-danger: #d24b3c;
+  --color-danger-surface-hover: #fbebe7;
+  --color-focus-ring: #5b82d9;
+
+  /* Ручка метронома (.dial, components/beatRing.ts): выпуклый диск —
+     градиент от светлого края сверху-слева к тёмному снизу-справа (купол,
+     не белый блин); риски шкалы вокруг. */
+  --color-knob-light: #f7f8fa;
+  --color-knob-dark: #d8dbe1;
+  --color-dial-tick: #b9bfc8;
+  --color-dial-tick-small: #d0d4db;
 
   /* Сетка редактора бита (.beat-grid, components/beatGrid.ts) */
-  --color-grid-column-hover: rgba(31, 41, 55, 0.08);
-  --color-grid-playhead: rgba(31, 41, 55, 0.14);
-  --color-grid-selection: rgba(31, 41, 55, 0.06);
+  --color-grid-column-hover: rgba(58, 63, 71, 0.06);
+  --color-grid-playhead: rgba(236, 106, 31, 0.16);
+  --color-grid-selection: rgba(58, 63, 71, 0.06);
   --color-grid-invalid: #f87171;
 
-  /* Сектор кольца метронома за стрелкой (мигание выключено) — тёмный
-     акцентный, полупрозрачный: цифры BPM и точки поверх читаются. */
-  --color-dial-sector: rgba(31, 41, 55, 0.22);
-
   /* Сетка долей секции песни (.bar-grid, screens/songScreen.ts) */
-  --color-bar-grid-bar-start: #f3f4f6;
-  /* Доли под филлом из библиотеки битов */
-  --color-bar-grid-fill: #f59e0b;
+  --color-bar-grid-bar-start: #dde0e6;
+  /* Доли под филлом — отметка снизу квадратика: тёмная, видна и на
+     оранжевой (текущей) доле. */
+  --color-bar-grid-fill: #4a505a;
 }
 
 :root {
   /* Типографика */
-  --font-family: 'Helvetica Neue', sans-serif;
+  /* Exo 2 — геометрический, как в референсе; встроен (main.ts,
+     @fontsource-variable/exo-2), прекешируется — работает офлайн. */
+  --font-family: 'Exo 2 Variable', 'Helvetica Neue', sans-serif;
   --font-size-h1: 1.75rem;
   --font-size-h2: 1.25rem;
   --font-size-h3: 1.0625rem;
   --font-size-body: 1rem;
   --font-size-small: 0.8125rem;
   --font-size-caption: 0.6875rem;
+  --font-weight-light: 250;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
-  --font-weight-bold: 700;
-  --font-weight-black: 900;
+  --font-weight-bold: 600;
+  --font-weight-black: 800;
+  /* Подписи капслоком (кнопки, заголовки блоков) — с разрядкой. */
+  --letter-spacing-caps: 0.1em;
   --line-height-heading: 1.2;
   --line-height-body: 1.5;
 
@@ -81,10 +97,20 @@
   --radius-xl: 24px;
   --radius-full: 9999px;
 
-  /* Тени */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Тени мягкого материала: выпуклое — свет сверху-слева, тень
+     снизу-справа; inset — вдавленное. */
+  --shadow-sm: 2px 2px 5px rgba(160, 168, 181, 0.35), -2px -2px 5px rgba(255, 255, 255, 0.85);
+  --shadow-md: 5px 5px 12px rgba(160, 168, 181, 0.4), -5px -5px 12px rgba(255, 255, 255, 0.9);
+  --shadow-lg: 10px 10px 24px rgba(150, 158, 172, 0.45), -8px -8px 20px rgba(255, 255, 255, 0.95);
+  --shadow-inset: inset 2px 2px 5px rgba(160, 168, 181, 0.45), inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+  /* Ручка — крупный купол: глубокая тень снаружи и мягкая светотень внутри. */
+  --shadow-knob:
+    14px 14px 30px rgba(140, 148, 162, 0.55),
+    -10px -10px 26px rgba(255, 255, 255, 0.95),
+    inset -6px -6px 14px rgba(150, 158, 172, 0.3),
+    inset 6px 6px 14px rgba(255, 255, 255, 0.8);
+  /* Канавка вокруг ручки, в которой лежит дуга хода такта. */
+  --shadow-groove: inset 3px 3px 6px rgba(150, 158, 172, 0.5), inset -3px -3px 6px rgba(255, 255, 255, 0.9);
 
   /* Тач-таргеты (Правила проектирования, п.7 — используется на сцене) */
   --touch-target-min: 44px;
@@ -121,6 +147,8 @@ body {
   line-height: var(--line-height-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Галочки и прочие родные элементы — в акцентном цвете. */
+  accent-color: var(--color-accent);
 }
 
 /* Корневой контейнер приложения (index.html) — растягивается на весь
@@ -141,7 +169,15 @@ h1, h2, h3 {
 }
 h1 { font-size: var(--font-size-h1); }
 h2 { font-size: var(--font-size-h2); }
-h3 { font-size: var(--font-size-h3); }
+/* Заголовок блока — подпись капслоком с разрядкой, как GAIN/MIX в
+   референсе. */
+h3 {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--letter-spacing-caps);
+  text-transform: uppercase;
+  color: var(--color-text-sub);
+}
 
 button, input, textarea, select {
   font-family: inherit;

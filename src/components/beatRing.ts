@@ -1,64 +1,56 @@
-// Кольцо метронома: доли такта — крупные точки по кругу (12/3/6/9 часов при
-// 4 долях), между ними — деление доли, мелкими точками. Кольцо целиком
-// вспыхивает заливкой на каждый удар (крупный и мелкий); точки закрашиваются
-// по одной и копятся весь такт, разом гаснут в начале следующего. С
-// выключенным миганием вместо вспышки по точкам прыжками ходит стрелка, а
-// за ней прыжками же растёт тёмный сектор от 12 часов — до конца такта
-// (решение пользователя).
+// Кольцо метронома — ручка (решение пользователя, по референсу): выпуклый
+// диск с темпом и размером, вокруг — риски: доли такта — крупные (12/3/6/9
+// часов при 4 долях), между ними — деление доли, мелкие. Диск вспыхивает на
+// каждый удар (крупный и мелкий); риски закрашиваются по одной и копятся
+// весь такт, разом гаснут в начале следующего. С выключенным миганием
+// вместо вспышки по рискам прыжками ходит указатель — вдавленная точка у
+// края диска, а за ним прыжками же растёт оранжевая дуга от 12 часов — до
+// конца такта.
 // Не завязано на конкретный экран — принимает готовый центр (BPM + бейдж
 // размера) и просто расставляет точки вокруг него (Правила проектирования,
 // п.4: искать существующее, не плодить свою геометрию в каждом экране).
-// Размер кольца задаёт CSS (.dial — по свободному месту экрана), поэтому
-// точки стоят в процентах от него.
+// Размер кольца задаёт CSS (.dial — по свободному месту экрана): риска —
+// обёртка во весь круг, повёрнутая на свой угол, поэтому от размера не
+// зависит.
 import { h } from '../dom.ts'
-
-// Радиус окружности точек — доля от радиуса кольца (было 118 px при 280 px).
-const DOT_RADIUS = 0.843
 
 export interface BeatRing {
   element: HTMLElement
-  /** Перерисовать точки (если изменились beatsPerBar/beatDivision),
-   * закрасить пройденные с начала такта и поставить стрелку. */
+  /** Перерисовать риски (если изменились beatsPerBar/beatDivision),
+   * закрасить пройденные с начала такта и поставить указатель. */
   update(opts: { beat: number; subBeat: number; beatsPerBar: number; beatDivision: number; isPlaying: boolean }): void
   /** Вспышка кольца на один удар — вызывать на каждое событие движка. */
   flash(): void
-  /** Мигание выключено — показать стрелку и сектор за ней вместо вспышек. */
+  /** Мигание выключено — показать указатель и дугу за ним вместо вспышек. */
   setHandMode(on: boolean): void
 }
 
-function polarPercent(angleDeg: number): { x: number; y: number } {
-  const rad = (angleDeg * Math.PI) / 180
-  return { x: 50 + 50 * DOT_RADIUS * Math.cos(rad), y: 50 + 50 * DOT_RADIUS * Math.sin(rad) }
-}
-
 export function createBeatRing(centerContent: HTMLElement): BeatRing {
-  const sector = h('div', { className: 'dial__sector', hidden: true })
-  const hand = h('div', { className: 'dial__hand', hidden: true })
-  const ring = h('div', { className: 'dial' }, sector, hand, centerContent)
-  let dots: { el: HTMLElement; totalIndex: number }[] = []
+  const arc = h('div', { className: 'dial__arc', hidden: true })
+  const pointer = h('div', { className: 'dial__pointer', hidden: true })
+  const ring = h('div', { className: 'dial' }, arc, h('div', { className: 'dial__knob' }, pointer, centerContent))
+  let ticks: { el: HTMLElement; totalIndex: number }[] = []
   let builtBeatsPerBar = -1
   let builtBeatDivision = -1
-  // Точки, закрашенные в текущем такте — копятся весь такт (не гаснут
+  // Риски, закрашенные в текущем такте — копятся весь такт (не гаснут
   // одна за другой), разом сбрасываются в начале следующего такта.
   let filled = new Set<number>()
 
-  function rebuildDots(beatsPerBar: number, beatDivision: number) {
-    dots.forEach((d) => d.el.remove())
-    dots = []
+  function rebuildTicks(beatsPerBar: number, beatDivision: number) {
+    ticks.forEach((d) => d.el.remove())
+    ticks = []
     filled = new Set()
     const stepAngle = 360 / beatsPerBar
     for (let beatIndex = 0; beatIndex < beatsPerBar; beatIndex++) {
-      const baseAngle = -90 + beatIndex * stepAngle // -90° = 12 часов, дальше по часовой
+      const baseAngle = beatIndex * stepAngle // 0° = 12 часов, дальше по часовой
       for (let sub = 0; sub < beatDivision; sub++) {
         const angle = baseAngle + sub * (stepAngle / beatDivision)
-        const { x, y } = polarPercent(angle)
-        const isLarge = sub === 0
-        const dot = h('div', {
-          className: `dial__dot ${isLarge ? 'dial__dot--large' : 'dial__dot--small'}`,
-          style: { left: `${x}%`, top: `${y}%` },
+        const tick = h('div', {
+          className: `dial__tick${sub === 0 ? ' dial__tick--large' : ''}`,
+          style: { transform: `rotate(${angle}deg)` },
         })
-        ring.append(dot)
-        dots.push({ el: dot, totalIndex: beatIndex * beatDivision + sub })
+        ring.insertBefore(tick, arc) // риски — под дугой и диском
+        ticks.push({ el: tick, totalIndex: beatIndex * beatDivision + sub })
       }
     }
     builtBeatsPerBar = beatsPerBar
@@ -69,7 +61,7 @@ export function createBeatRing(centerContent: HTMLElement): BeatRing {
     element: ring,
     update({ beat, subBeat, beatsPerBar, beatDivision, isPlaying }) {
       if (beatsPerBar !== builtBeatsPerBar || beatDivision !== builtBeatDivision) {
-        rebuildDots(beatsPerBar, beatDivision)
+        rebuildTicks(beatsPerBar, beatDivision)
       }
       const index = (beat - 1) * beatDivision + subBeat
       if (!isPlaying) {
@@ -80,12 +72,12 @@ export function createBeatRing(centerContent: HTMLElement): BeatRing {
         if (beat === 1 && subBeat === 0) filled.clear()
         filled.add(index)
       }
-      dots.forEach((d) => d.el.classList.toggle('dial__dot--filled', filled.has(d.totalIndex)))
-      // Стрелка — на точку текущего удара, прыжком; стоим — на 12 часов.
-      // Сектор — от 12 часов до стрелки: в начале такта пустой.
+      ticks.forEach((d) => d.el.classList.toggle('dial__tick--filled', filled.has(d.totalIndex)))
+      // Указатель — на риску текущего удара, прыжком; стоим — на 12 часов.
+      // Дуга — от 12 часов до указателя: в начале такта пустая.
       const angle = isPlaying ? (index * 360) / (beatsPerBar * beatDivision) : 0
-      hand.style.transform = `rotate(${angle}deg)`
-      sector.style.setProperty('--sector-angle', `${angle}deg`)
+      pointer.style.transform = `rotate(${angle}deg)`
+      arc.style.setProperty('--arc-angle', `${angle}deg`)
     },
     flash() {
       ring.classList.remove('dial--flash')
@@ -93,8 +85,8 @@ export function createBeatRing(centerContent: HTMLElement): BeatRing {
       ring.classList.add('dial--flash')
     },
     setHandMode(on) {
-      hand.hidden = !on
-      sector.hidden = !on
+      pointer.hidden = !on
+      arc.hidden = !on
     },
   }
 }

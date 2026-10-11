@@ -46,10 +46,13 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
     buttonClass: 'dial__bpm',
     inputClass: 'dial__bpm-input',
   })
+  // Подписи на странице метронома — короткие, по-английски (решение
+  // пользователя).
   const meter = createMeterField({
     get: () => metronome(),
     set: (m) => setMetronome(m),
     rerender: renderCenter,
+    labels: { beats: 'Beats', division: 'Division', done: 'Done' },
   })
 
   function updateRing() {
@@ -115,14 +118,14 @@ export function mountMetronomeScreen(container: HTMLElement, engine: AudioEngine
             button(delta > 0 ? `+${delta}` : String(delta), { onClick: () => setMetronome({ bpm: metronome().bpm + delta }) })
           )
         ),
-        h('label', { className: 'row checkbox-row' }, voiceCheckbox, h('span', {}, 'Считать вслух вместо клика')),
-        h('label', { className: 'row checkbox-row' }, flashCheckbox, h('span', {}, 'Включить мигание')),
+        h('label', { className: 'row checkbox-row' }, voiceCheckbox, h('span', {}, 'Voice count')),
+        h('label', { className: 'row checkbox-row' }, flashCheckbox, h('span', {}, 'Flash')),
         // «Свой паттерн» (решение пользователя): галочка — играть его вместо
         // щелчка, карандаш — редактор (/metronome/pattern).
         h(
           'div',
           { className: 'row row--wrap row--center' },
-          h('label', { className: 'row checkbox-row' }, patternCheckbox, h('span', {}, 'Свой паттерн')),
+          h('label', { className: 'row checkbox-row' }, patternCheckbox, h('span', {}, 'Pattern')),
           iconButton('pencil-simple', { onClick: onEditPattern, ariaLabel: 'Редактировать свой паттерн' }),
           speedEl
         )
