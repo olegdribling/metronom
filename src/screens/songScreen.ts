@@ -288,14 +288,16 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     setDraft({ kind: 'song', song: spreadLinked({ ...song, sections }, sectionId) })
   }
 
-  // Снять выделение — снова долгий тап; после «Копировать»/«Вставить» оно
-  // снимается само.
+  // Только иконки (решение пользователя): копировать, вставить и × — снять
+  // выделение, ничего не делая; после копирования или вставки оно снимается
+  // само, повторный долгий тап — тоже.
   function selectionBar(sec: Section): HTMLElement {
     return h(
       'div',
-      { className: 'row row--3 row--wrap mt-2' },
-      button('Копировать', { iconName: 'copy', onClick: () => copySection(sec.id) }),
-      button('Вставить', { variant: 'accent', iconName: 'clipboard-text', disabled: !sectionClipboard || locked(), onClick: () => pasteInto(sec.id) })
+      { className: 'row mt-2' },
+      iconButton('copy', { ariaLabel: 'Копировать', onClick: () => copySection(sec.id) }),
+      iconButton('clipboard-text', { variant: 'accent', ariaLabel: 'Вставить', disabled: !sectionClipboard || locked(), onClick: () => pasteInto(sec.id) }),
+      h('div', { className: 'push-right' }, iconButton('x', { ariaLabel: 'Закрыть', onClick: () => { selectedId = null; render() } }))
     )
   }
 
