@@ -4,8 +4,9 @@
 //
 // До Play: название, темп и вся структура песни; ← → — соседние песни,
 // «Список» — все песни плейлиста. Play — отсчёт и песня с начала (playSong в
-// data/engineSettings.ts — как Play и ▶ на экране песни); песню без секций
-// играть нечем — Play неактивен. Во время игры: текущая секция крупно и
+// data/engineSettings.ts — как Play и ▶ на экране песни); песня без секций —
+// просто щелчок в её темпе до Стоп, на экране название и темп (решение
+// пользователя). Во время игры: текущая секция крупно и
 // жёлтым — название, комментарий, «Такт N / M» и все её доли квадратиками
 // (прошедшие серые, текущая жёлтая, под филлом — отметка; строка — как на
 // экране песни); ниже —
@@ -143,8 +144,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
   }
 
   function play() {
-    const song = currentSong()
-    if (!song?.sections.length) return
+    if (!currentSong()) return
     pendingStart = true
     void playSong(engine).then(render)
   }
@@ -336,21 +336,30 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
       return
     }
 
+    const songHead = () => [
+      h('h1', { className: 'concert__song' }, song.name),
+      h('div', { className: 'concert__tempo' }, `${song.bpm} BPM · ${song.beatsPerBar}/${song.beatDivision}`),
+    ]
+
     if (!playing) {
       const index = indexOfCurrent()
       const last = songs().length - 1
-      mount(
-        mainEl,
-        h('h1', { className: 'concert__song' }, song.name),
-        h('div', { className: 'concert__tempo' }, `${song.bpm} BPM · ${song.beatsPerBar}/${song.beatDivision}`)
-      )
-      const playable = engine.canStart && song.sections.length > 0
+      mount(mainEl, ...songHead())
       setList(`structure|${song.id}`, ...song.sections.map((sec) => sectionRow(song, sec)))
-      setControls(`idle|${index}|${last}|${playable}`, () => [
+      setControls(`idle|${index}|${last}|${engine.canStart}`, () => [
         controlButton('caret-left', () => selectIndex(index - 1), { disabled: index <= 0 }),
-        controlButton('play', play, { main: true, disabled: !playable }),
+        controlButton('play', play, { main: true, disabled: !engine.canStart }),
         controlButton('caret-right', () => selectIndex(index + 1), { disabled: index >= last }),
       ])
+      return
+    }
+
+    // Песня без секций играет щелчок в своём темпе, пока не нажмут Стоп, — на
+    // экране название и темп.
+    if (!song.sections.length) {
+      mount(mainEl, ...songHead())
+      setList(`empty|${song.id}`)
+      setControls('playing', () => [stopEl])
       return
     }
 
