@@ -696,6 +696,11 @@
   grid-template-columns: repeat(var(--bar-grid-columns, 8), 1fr);
   gap: var(--space-1);
   margin-top: var(--space-2);
+  /* Долгий тап по квадратикам выделяет несколько — без выделения текста и
+     меню телефона. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .bar-grid__cell {
   height: 20px;

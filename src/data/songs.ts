@@ -300,3 +300,38 @@ export function squareContent(song: Song, sectionIndex: number, at: number, id: 
   if (!sec.beat && !patternHasNotes) return null
   return sliceForBeat(song, sectionIndex, at, id)
 }
+
+/** Куда встанет копия квадратиков from..to («Копировать влево/вправо»):
+ * один раз, вплотную справа (direction 1) или слева (−1). Не помещается в
+ * секцию (всего `total` долей) — null: кнопка неактивна (решение
+ * пользователя). */
+export function squaresTarget(total: number, from: number, to: number, direction: 1 | -1): number | null {
+  const n = to - from + 1
+  const start = direction > 0 ? to + 1 : from - n
+  return start >= 0 && start + n <= total ? start : null
+}
+
+/** «Копировать влево/вправо» для квадратиков from..to секции: каждый
+ * квадратик копируется, как одиночный (squareContent), на своё место в
+ * копии; брейки, начинавшиеся в квадратиках копии, заменяются. Возвращает
+ * новые брейки секции и где теперь копия (на неё переезжает выделение);
+ * не помещается — null. */
+export function copySquares(
+  song: Song,
+  sectionIndex: number,
+  from: number,
+  to: number,
+  direction: 1 | -1,
+  newId: () => string
+): { fills: SectionFill[]; from: number; to: number } | null {
+  const sec = song.sections[sectionIndex]
+  const start = squaresTarget(sectionBeatCount(sec, song.beatsPerBar), from, to, direction)
+  if (start === null) return null
+  const n = to - from + 1
+  const fills = (sec.fills ?? []).filter((f) => f.at < start || f.at >= start + n)
+  for (let i = 0; i < n; i++) {
+    const beat = squareContent(song, sectionIndex, from + i, newId())
+    if (beat) fills.push({ at: start + i, beat })
+  }
+  return { fills: fills.sort((a, b) => a.at - b.at), from: start, to: start + n - 1 }
+}

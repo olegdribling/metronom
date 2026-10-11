@@ -9,6 +9,7 @@ import {
   clampBars,
   copyBeat,
   copySectionSettings,
+  copySquares,
   createEmptySong,
   embedLibraryBeats,
   emptySongPattern,
@@ -18,6 +19,7 @@ import {
   sectionAtBar,
   sliceForBeat,
   spreadLinked,
+  squaresTarget,
   squareContent,
   withSongMeter,
 } from '../src/data/songs.ts'
@@ -450,4 +452,30 @@ test('связанные секции: правка одной — во все �
 
   const raw = normalizeSong({ id: 1, sections: [{ id: 'a', name: 'VERSE', bars: 2, own: true }, { id: 'b', name: 'VERSE', bars: 2, own: 'да' }] })
   assert.deepEqual(raw.sections.map((s) => s.own ?? false), [true, false], '«отвязана» хранится')
+})
+
+test('несколько квадратиков: копия один раз вплотную, не помещается — нельзя', () => {
+  assert.equal(squaresTarget(16, 0, 3, 1), 4, 'такт 1 → такт 2')
+  assert.equal(squaresTarget(16, 12, 15, 1), null, 'последний такт вправо — некуда')
+  assert.equal(squaresTarget(16, 10, 13, 1), null, '4 доли с 14-й — не влезают')
+  assert.equal(squaresTarget(16, 4, 7, -1), 0)
+  assert.equal(squaresTarget(16, 2, 5, -1), null, 'влево до начала секции не влезает')
+  assert.equal(squaresTarget(16, 3, 3, 1), 4, 'одна доля — как раньше')
+
+  const one = beat('one', [true, false, false, true]) // 1/4
+  const two = beat('two', [true, false, false, false, false, true, true, false]) // 2/4
+  const song: Song = {
+    ...createEmptySong('s'),
+    sections: [{ id: 'v', name: 'VERSE', bars: 4, comment: '', fills: [{ at: 0, beat: one }, { at: 2, beat: two }, { at: 5, beat: one }] }],
+  }
+  let n = 0
+  const copy = copySquares(song, 0, 0, 3, 1, () => `n${++n}`)!
+  assert.deepEqual([copy.from, copy.to], [4, 7], 'выделение — на копии')
+  assert.deepEqual(copy.fills.map((f) => f.at), [0, 2, 4, 6, 7], 'копия на 4..7, брейк на 5 заменён (на 5 в оригинале — щелчок)')
+  const at = (i: number) => copy.fills.find((f) => f.at === i)!.beat!
+  assert.deepEqual(at(4).tracks, one.tracks, 'доля 1 — копия однодольного брейка')
+  assert.deepEqual([at(6).tracks[0].steps, at(7).tracks[0].steps], [[true, false, false, false], [false, true, true, false]], 'двухдольный брейк — по долям')
+  assert.equal(copySquares(song, 0, 12, 15, 1, () => 'x'), null, 'не помещается — ничего')
+  const left = copySquares(song, 0, 4, 7, -1, () => 'l')!
+  assert.deepEqual([left.from, left.to], [0, 3])
 })

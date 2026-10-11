@@ -52,6 +52,7 @@ import {
   clampBpm,
   copyBeat,
   copySectionSettings,
+  copySquares,
   coveringFill,
   newBeatId,
   newSectionId,
@@ -60,11 +61,16 @@ import {
   sliceForBeat,
   songMeter,
   spreadLinked,
-  squareContent,
+  squaresTarget,
   withSongMeter,
 } from '../data/songs.ts'
 
 const emptySectionForm = (): SectionFormData => ({ name: 'VERSE', bars: 4, comment: '', beatChoice: '' })
+
+// Выделение нескольких квадратиков — как в сетке бита (components/beatGrid.ts):
+// подержать столько, а сдвинутый раньше палец — прокрутка.
+const RANGE_HOLD_MS = 350
+const TOUCH_SLOP_PX = 8
 
 // Скопированная секция («Копировать» на выделенной) — её установки (решение
 // пользователя). Живёт, пока открыто приложение: вставить можно и в другую
@@ -92,9 +98,15 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
   let shownBeat = -1
   let shownSection = -1
   let lastPlayback: PlaybackState = engine.playbackState
-  // Открытое меню квадратика: секция, доля (от начала секции, с 0) и открыт
-  // ли в нём список битов («Из списка»).
-  let fillPicker: { sectionId: string; at: number; list: boolean } | null = null
+  // Открытое меню квадратиков: секция, выделенные доли from..to (от начала
+  // секции, с 0; одна доля — from = to) и открыт ли список битов («Из
+  // списка»).
+  let fillPicker: { sectionId: string; from: number; to: number; list: boolean } | null = null
+  // Долгий тап по квадратику выделил несколько — click того же пальца после
+  // отпускания не должен сбросить выделение на одну долю.
+  let swallowCellClick = false
+  // Идёт выделение квадратиков — карточку при этом не перетаскивать.
+  let dragSelecting = false
   // Выделенная долгим тапом секция — на ней «Копировать» и «Вставить».
   let selectedId: string | null = null
   let focusPending = opts.focusSectionId
@@ -189,24 +201,21 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     opts.onEditFill(sectionId, at)
   }
 
-  // «Копировать влево/вправо»: квадратик целиком — в соседний (решение
-  // пользователя). Что именно копируется — squareContent (data/songs.ts):
-  // филл на эту долю — его копия, кусок филла/грува/паттерна — новый бит на
-  // долю, только щелчок — у соседа просто снимается его филл. Филл,
-  // стоявший на соседнем квадратике, заменяется. Меню переезжает на копию —
-  // можно жать дальше, как копия вбок в сетке бита.
-  function copyBeside(sectionId: string, at: number, direction: 1 | -1) {
+  // «Копировать влево/вправо»: выделенные квадратики (один или несколько
+  // подряд) — один раз, вплотную слева/справа (решение пользователя). Каждый
+  // квадратик — как одиночный (squareContent): филл на эту долю — его копия,
+  // кусок филла/грува/паттерна — новый бит на долю, только щелчок — там
+  // просто снимается филл. Брейки на месте копии заменяются. Выделение
+  // переезжает на копию — можно жать дальше; до края секции не влезает —
+  // кнопка неактивна.
+  function copyBeside(sectionId: string, from: number, to: number, direction: 1 | -1) {
     const song = currentSong()
     const index = song?.sections.findIndex((s) => s.id === sectionId) ?? -1
     if (!song || index < 0) return
-    const sec = song.sections[index]
-    const target = at + direction
-    if (target < 0 || target >= sectionBeatCount(sec, song.beatsPerBar)) return
-    const beat = squareContent(song, index, at, newBeatId())
-    const fills = (sec.fills ?? []).filter((f) => f.at !== target)
-    if (beat) fills.push({ at: target, beat })
-    fillPicker = { sectionId, at: target, list: false }
-    updateSection(sectionId, { fills: fills.sort((a, b) => a.at - b.at) })
+    const copy = copySquares(song, index, from, to, direction, newBeatId)
+    if (!copy) return
+    fillPicker = { sectionId, from: copy.from, to: copy.to, list: false }
+    updateSection(sectionId, { fills: copy.fills })
   }
 
   // Форма → секция. «Бит секции»: свой бит секции — остаётся, бит из
@@ -449,28 +458,103 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
           (i % beatsPerBar === 0 ? ' bar-grid__cell--bar-start' : '') +
           (underFill ? ' bar-grid__cell--fill' : '') +
           (fills.some((f) => !!f.beat && f.at === i) ? ' bar-grid__cell--fill-start' : '') +
-          (fillPicker?.sectionId === sec.id && fillPicker.at === i ? ' bar-grid__cell--picked' : ''),
+          (fillPicker?.sectionId === sec.id && i >= fillPicker.from && i <= fillPicker.to ? ' bar-grid__cell--picked' : ''),
         'aria-label': `Доля ${i + 1} — филл`,
-        dataset: { beat: String(firstBar * beatsPerBar + i) },
+        dataset: { beat: String(firstBar * beatsPerBar + i), at: String(i) },
         disabled: locked(),
         onClick: () => {
-          const same = fillPicker?.sectionId === sec.id && fillPicker.at === i
-          fillPicker = same ? null : { sectionId: sec.id, at: i, list: false }
+          if (swallowCellClick) {
+            swallowCellClick = false
+            return
+          }
+          const same = fillPicker?.sectionId === sec.id && fillPicker.from === i && fillPicker.to === i
+          fillPicker = same ? null : { sectionId: sec.id, from: i, to: i, list: false }
           render()
         },
       })
       beatCells.push(cell)
       grid.append(cell)
     }
+    selectSquaresByDrag(grid, sec.id)
     return grid
   }
 
-  // Меню квадратика (решение пользователя — только кнопки): «Редактировать»,
-  // «Из списка» (биты из «Битов» — копия встанет филлом с этой доли),
-  // «Копировать влево/вправо» (на крайнем квадратике секции — неактивна), ×.
-  function renderFillPicker(sec: Section, at: number, list: boolean, beatsPerBar: number): HTMLElement {
+  // Несколько квадратиков подряд (решение пользователя): долгий тап по
+  // квадратику и вести пальцем — как выделение в сетке бита (подержать
+  // RANGE_HOLD_MS; сдвинул палец раньше — это прокрутка). Пока ведут, экран не
+  // перерисовывается — рамка у квадратиков меняется прямо в DOM; отпустили —
+  // меню для выделенных.
+  function selectSquaresByDrag(grid: HTMLElement, sectionId: string) {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let start: { x: number; y: number; at: number } | null = null
+    let range: { from: number; to: number } | null = null
+    const cellAt = (x: number, y: number): number | null => {
+      const cell = document.elementFromPoint(x, y)?.closest<HTMLElement>('.bar-grid__cell')
+      return cell && grid.contains(cell) ? Number(cell.dataset.at) : null
+    }
+    const paint = () =>
+      grid.querySelectorAll<HTMLElement>('.bar-grid__cell').forEach((cell) => {
+        const at = Number(cell.dataset.at)
+        cell.classList.toggle('bar-grid__cell--picked', !!range && at >= range.from && at <= range.to)
+      })
+    const reset = () => {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      start = null
+      range = null
+    }
+    grid.addEventListener('pointerdown', (e) => {
+      swallowCellClick = false
+      if (!e.isPrimary || locked()) return
+      const at = cellAt(e.clientX, e.clientY)
+      if (at === null) return
+      reset()
+      start = { x: e.clientX, y: e.clientY, at }
+      timer = setTimeout(() => {
+        timer = null
+        if (!start || !grid.isConnected) return
+        range = { from: start.at, to: start.at }
+        dragSelecting = true
+        paint()
+      }, RANGE_HOLD_MS)
+    })
+    grid.addEventListener('pointermove', (e) => {
+      if (!start) return
+      if (!range) {
+        // Повели раньше, чем выделение началось, — это прокрутка.
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TOUCH_SLOP_PX) reset()
+        return
+      }
+      const at = cellAt(e.clientX, e.clientY)
+      if (at === null) return
+      range = { from: Math.min(start.at, at), to: Math.max(start.at, at) }
+      paint()
+    })
+    const finish = () => {
+      const picked = range
+      reset()
+      dragSelecting = false
+      if (!picked) return
+      swallowCellClick = true
+      fillPicker = { sectionId, ...picked, list: false }
+      render()
+    }
+    grid.addEventListener('pointerup', finish)
+    grid.addEventListener('pointercancel', finish)
+    // Пока выделяют — страница не прокручивается за пальцем.
+    grid.addEventListener('touchmove', (e) => range && e.cancelable && e.preventDefault(), { passive: false })
+    grid.addEventListener('contextmenu', (e) => e.preventDefault())
+  }
+
+  // Меню квадратиков (решение пользователя — только кнопки): «Редактировать»,
+  // «Из списка» (биты из «Битов» — копия встанет филлом с этой доли) — для
+  // одной доли; «Копировать влево/вправо» — и для нескольких (до края секции
+  // не влезает — неактивна), ×.
+  function renderFillPicker(sec: Section, from: number, to: number, list: boolean, beatsPerBar: number): HTMLElement {
     const beats = getState().beats
-    const last = sectionBeatCount(sec, beatsPerBar) - 1
+    const total = sectionBeatCount(sec, beatsPerBar)
+    const single = from === to
+    const at = from
     return h(
       'div',
       { className: 'card card--inset stack stack--2' },
@@ -479,19 +563,28 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       h(
         'div',
         { className: 'row' },
-        iconButton('pencil-simple', { ariaLabel: 'Редактировать', onClick: () => editAt(sec.id, at) }),
+        iconButton('pencil-simple', { ariaLabel: 'Редактировать', disabled: !single, onClick: () => editAt(sec.id, at) }),
         iconButton('list', {
           ariaLabel: 'Из списка',
+          disabled: !single,
           onClick: () => {
-            fillPicker = { sectionId: sec.id, at, list: !list }
+            fillPicker = { sectionId: sec.id, from, to, list: !list }
             render()
           },
         }),
-        iconButton(['caret-left', 'copy'], { ariaLabel: 'Копировать влево', disabled: at <= 0, onClick: () => copyBeside(sec.id, at, -1) }),
-        iconButton(['copy', 'caret-right'], { ariaLabel: 'Копировать вправо', disabled: at >= last, onClick: () => copyBeside(sec.id, at, 1) }),
+        iconButton(['caret-left', 'copy'], {
+          ariaLabel: 'Копировать влево',
+          disabled: squaresTarget(total, from, to, -1) === null,
+          onClick: () => copyBeside(sec.id, from, to, -1),
+        }),
+        iconButton(['copy', 'caret-right'], {
+          ariaLabel: 'Копировать вправо',
+          disabled: squaresTarget(total, from, to, 1) === null,
+          onClick: () => copyBeside(sec.id, from, to, 1),
+        }),
         h('div', { className: 'push-right' }, iconButton('x', { onClick: () => { fillPicker = null; render() }, ariaLabel: 'Закрыть' }))
       ),
-      !list
+      !list || !single
         ? null
         : beats.length === 0
           ? h('p', { className: 'text-small text-muted' }, 'В библиотеке пока нет битов — создайте их в «Битах».')
@@ -521,7 +614,13 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
         className: `card${selectedId === sec.id ? ' card--selected' : ''}`,
         draggable: !locked(),
         dataset: { sectionId: sec.id },
-        onDragStart: () => (dragFrom = index),
+        onDragStart: (e: DragEvent) => {
+          if (dragSelecting) {
+            e.preventDefault()
+            return
+          }
+          dragFrom = index
+        },
         onDragOver: (e: DragEvent) => e.preventDefault(),
         onDrop: (e: DragEvent) => {
           e.preventDefault()
@@ -564,7 +663,7 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
       // Филлы видны только отметками на квадратиках — без строк «Филл … с
       // доли N» (решение пользователя).
       barGrid(sec, beatsPerBar, firstBar),
-      fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.at, fillPicker.list, beatsPerBar) : null,
+      fillPicker?.sectionId === sec.id ? renderFillPicker(sec, fillPicker.from, fillPicker.to, fillPicker.list, beatsPerBar) : null,
       editingId === sec.id
         ? sectionForm(
             `edit-${sec.id}`,
@@ -613,7 +712,9 @@ export function mountSongScreen(container: HTMLElement, songId: number, engine: 
     // числе с другого устройства) — форма и выбор закрываются, а не
     // переезжают на соседнюю.
     if (editingId !== null && !song.sections.some((s) => s.id === editingId)) editingId = null
-    if (fillPicker && !song.sections.some((s) => s.id === fillPicker!.sectionId)) fillPicker = null
+    // Выделенные доли вышли за конец секции (её укоротили) — меню закрывается.
+    const pickedSection = fillPicker ? song.sections.find((s) => s.id === fillPicker!.sectionId) : undefined
+    if (fillPicker && (!pickedSection || fillPicker.to >= sectionBeatCount(pickedSection, song.beatsPerBar))) fillPicker = null
     if (selectedId && !song.sections.some((s) => s.id === selectedId)) selectedId = null
     // Замок закрыли — открытые формы и выбор филла закрываются (выделение
     // остаётся: копировать можно, вставить — нет).
