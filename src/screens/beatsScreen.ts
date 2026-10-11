@@ -1,17 +1,29 @@
 // Экран библиотеки битов/брейков: список + создание + удаление (корзина в
-// строке, с подтверждением). Биты хранятся в
+// строке, с подтверждением) + ▶ у каждого бита — послушать: играет по кругу
+// в своём темпе, как в редакторе, ■ — стоп, ▶ другого — переключиться на
+// него (решение пользователя; звук включает app.ts). Биты хранятся в
 // аккаунте (users/{uid}/beats, data/userLibrary.ts) — без входа экран
 // показывает карточку «Войти через Google». Сам редактор — beatEditorScreen.ts.
 import { h, mount } from '../dom.ts'
-import { button } from '../components/button.ts'
+import { button, iconButton } from '../components/button.ts'
 import { accountGate } from '../components/signInCard.ts'
 import { deletableRow } from '../components/deletableRow.ts'
 import { icon } from '../icons.ts'
 import { BeatKind } from '../types.ts'
 import { createEmptyBeat } from '../data/beatsLibrary.ts'
 import { getState, subscribe, saveBeats } from '../state/appState.ts'
+import type { AudioEngine } from '../engine/audioEngine.ts'
 
-export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: string) => void): () => void {
+export interface BeatsScreenOptions {
+  onOpenBeat: (beatId: string) => void
+  /** ▶/■ у бита: играет — стоп, иначе — играть его (вместо того, что играло). */
+  onToggleBeat: (beatId: string) => Promise<void>
+  /** Какой бит сейчас играет (null — никакой). */
+  playingBeat: () => string | null
+}
+
+export function mountBeatsScreen(container: HTMLElement, engine: AudioEngine, opts: BeatsScreenOptions): () => void {
+  const { onOpenBeat } = opts
   function handleCreate() {
     const beat = createEmptyBeat(`beat_${Date.now()}`, 'Новый бит')
     const state = getState()
@@ -35,6 +47,7 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
       return
     }
     const state = getState()
+    const playing = opts.playingBeat()
     mount(
       container,
       h(
@@ -63,6 +76,15 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
                     confirmText: `Удалить бит «${beat.name}»? Это нельзя отменить. В песнях останутся их копии.`,
                     onDelete: () => deleteBeat(beat.id),
                     disabled: !getState().unlocked,
+                    // Слушать можно и под закрытым замком. Сэмплы ещё не
+                    // загрузились — ждём, как ▶ на секции песни.
+                    actions: [
+                      iconButton(playing === beat.id ? 'stop' : 'play', {
+                        ariaLabel: playing === beat.id ? 'Стоп' : 'Слушать бит',
+                        disabled: !state.samplesLoaded,
+                        onClick: () => void opts.onToggleBeat(beat.id).then(render),
+                      }),
+                    ],
                   }
                 )
               )
@@ -71,7 +93,20 @@ export function mountBeatsScreen(container: HTMLElement, onOpenBeat: (beatId: st
     )
   }
 
+  // Бит заиграл или замолчал (в том числе Стоп в футере) — ▶/■ у строк
+  // меняются. Своего слота у списка нет, а у движка он один — берём его, как
+  // экраны с подсветкой (заиграл — первое событие доли, замолчал — сброс).
+  let wasPlaying = engine.isPlaying
+  const releasePlayback = engine.onPlaybackState(() => {
+    if (engine.isPlaying === wasPlaying) return
+    wasPlaying = engine.isPlaying
+    render()
+  })
+
   const unsubscribe = subscribe(render)
   render()
-  return unsubscribe
+  return () => {
+    unsubscribe()
+    releasePlayback()
+  }
 }

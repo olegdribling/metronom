@@ -355,10 +355,31 @@ export function startApp(root: HTMLElement): void {
     mountScreen((c) => mountBeatEditorScreen(c, songFillTarget(songId, sectionId, at), engine, null))
   })
 
+  // ▶ у бита в списке «Биты» (решение пользователя): играет он, по кругу, в
+  // своём темпе — как в редакторе; ■ (тот же бит) — стоп, ▶ другого —
+  // переключиться на него. Своего звука у списка по-прежнему нет: Play в
+  // футере неактивен, Стоп работает.
+  const playingBeat = (): string | null => (engine.isPlaying && activeSource.kind === 'beat' ? activeSource.beatId : null)
+  function toggleBeat(beatId: string): Promise<void> {
+    const wasThis = playingBeat() === beatId
+    if (engine.isPlaying) engine.stop()
+    if (wasThis) return Promise.resolve()
+    activeSource = { kind: 'beat', beatId }
+    engineContent = undefined
+    syncEngine()
+    return engine.start()
+  }
+
   router.on('/beats', () => {
     enterPage(null)
     setScreen('beats', () => 'Биты', { lock: true })
-    mountScreen((c) => mountBeatsScreen(c, (beatId) => router.navigate(`/beats/${encodeURIComponent(beatId)}`)))
+    mountScreen((c) =>
+      mountBeatsScreen(c, engine, {
+        onOpenBeat: (beatId) => router.navigate(`/beats/${encodeURIComponent(beatId)}`),
+        onToggleBeat: toggleBeat,
+        playingBeat,
+      })
+    )
   })
 
   router.on('/beats/:id', (params) => {
