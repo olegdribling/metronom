@@ -21,6 +21,13 @@
 // пришедшееся на перерисовку, терялось бы (палец опускался на старую
 // кнопку, а отпускался уже на новой). Экран не гаснет, пока открыт (Screen
 // Wake Lock).
+//
+// Временное решение (пользователя): в «Списке» у каждой песни ▶ — играет
+// метроном как есть (щелчок или свой паттерн, размер, голос), только в
+// темпе песни, без отсчёта (источник songClick, app.ts); ■ — стоп, ▶ другой
+// — переключиться; список остаётся. Это не игра песни: экран её не
+// показывает и по остановке следующую не открывает. Закрыли список,
+// выбрали песню или вышли из «Концерта» — щелчок останавливается.
 import { h, mount } from '../dom.ts'
 import { icon } from '../icons.ts'
 import { onLongPress } from '../components/longPress.ts'
@@ -28,7 +35,7 @@ import { accountGate } from '../components/signInCard.ts'
 import type { AudioEngine } from '../engine/audioEngine.ts'
 import { getState, subscribe } from '../state/appState.ts'
 import { barGridColumns, fillBeats, sectionAtBar, sectionBeatCount } from '../data/songs.ts'
-import { playSong } from '../data/engineSettings.ts'
+import { clickNeedsSamples, playSong } from '../data/engineSettings.ts'
 import { PlaybackState, Section, Song } from '../types.ts'
 
 export interface ConcertScreenOptions {
@@ -36,6 +43,11 @@ export interface ConcertScreenOptions {
   initialSongId: number | null
   /** Выбрана песня — она становится звуком страницы (app.ts). */
   onSelectSong(songId: number): void
+  /** Песня, чей щелчок (▶ в списке) сейчас играет; null — не играет. */
+  playingClick(): number | null
+  /** ▶/■ у песни в списке: щелчок метронома в её темпе. */
+  onToggleClick(songId: number): Promise<void>
+  onStopClick(): void
   onExit(): void
 }
 
@@ -107,7 +119,9 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
   // Стоп нажали здесь: песня остановлена, а не доиграла (доиграла — открыть
   // следующую).
   let stoppedHere = false
-  let wasPlaying = engine.isPlaying
+  // Играет песня, а не щелчок из списка.
+  const songPlaying = () => engine.isPlaying && opts.playingClick() === null
+  let wasPlaying = songPlaying()
   // Что сейчас на экране во время игры — сменилась секция (или кончился
   // отсчёт) — перерисовать.
   let shownKey = ''
@@ -137,6 +151,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
   function selectIndex(index: number) {
     const song = songs()[index]
     if (!song) return
+    opts.onStopClick()
     songId = song.id
     choosing = false
     syncSelection()
@@ -165,7 +180,11 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
 
   // --- постоянный каркас ---
   const exitEl = h('button', { type: 'button', className: 'concert__exit' }, icon('x'))
-  onLongPress(exitEl, opts.onExit)
+  // Вышли — щелчок из списка останавливается (решение пользователя).
+  onLongPress(exitEl, () => {
+    opts.onStopClick()
+    opts.onExit()
+  })
   const stopEl = controlButton('stop', stop, { main: true })
   const topRestEl = h('div', { className: 'concert__top-rest' })
   const mainEl = h('div', { className: 'concert__main' })
@@ -282,8 +301,9 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
         className: `concert__btn concert__btn--small${choosing ? ' concert__btn--on' : ''}`,
         onClick: () => {
           choosing = !choosing
+          if (!choosing) opts.onStopClick()
           render()
-          if (choosing) listEl.querySelector('.concert__song-row--current')?.scrollIntoView({ block: 'center' })
+          if (choosing) listEl.querySelector('.concert__song-item--current')?.scrollIntoView({ block: 'center' })
         },
       },
       icon('list'),
@@ -291,12 +311,35 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
     )
   }
 
+  // Строка песни: тап — выбрать её; под названием — комментарий к песне;
+  // ▶ справа — щелчок метронома в её темпе.
   function songRow(s: Song, index: number, current: Song): HTMLElement {
+    const clicking = opts.playingClick() === s.id
+    const state = getState()
     return h(
-      'button',
-      { type: 'button', className: `concert__song-row${s.id === current.id ? ' concert__song-row--current' : ''}`, onClick: () => selectIndex(index) },
-      h('span', { className: 'concert__song-row-name' }, s.name),
-      h('span', { className: 'concert__song-row-bpm' }, `${s.bpm} BPM`)
+      'div',
+      { className: `concert__song-item${s.id === current.id ? ' concert__song-item--current' : ''}` },
+      h(
+        'button',
+        { type: 'button', className: 'concert__song-row', onClick: () => selectIndex(index) },
+        h(
+          'span',
+          { className: 'concert__song-row-main' },
+          h('span', { className: 'concert__song-row-name' }, s.name),
+          s.comment ? h('span', { className: 'concert__song-row-comment' }, s.comment) : null
+        ),
+        h('span', { className: 'concert__song-row-bpm' }, `${s.bpm} BPM`)
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          className: `concert__btn concert__song-play${clicking ? ' concert__btn--main' : ''}`,
+          disabled: clickNeedsSamples(state.metronome, state.metronomePattern) && !state.samplesLoaded,
+          onClick: () => void opts.onToggleClick(s.id).then(render),
+        },
+        icon(clicking ? 'stop' : 'play')
+      )
     )
   }
 
@@ -323,7 +366,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
     const song = currentSong()
     if (!song) return renderMessage(h('p', { className: 'concert__message' }, state.songsLoaded ? 'В плейлисте нет песен.' : 'Загрузка…'))
 
-    const playing = engine.isPlaying
+    const playing = songPlaying()
     if (playing) choosing = false
     frame.className = `concert${choosing ? ' concert--choosing' : ''}`
     if (playing) setTop(`playing|${song.name}`, h('div', { className: 'concert__top-title' }, song.name))
@@ -375,12 +418,21 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
     showLive(song, pos)
   }
 
+  let wasClicking = opts.playingClick()
   const releasePlayback = engine.onPlaybackState((playback) => {
+    // Щелчок из списка заиграл, сменился или замолчал (в том числе
+    // остановили не здесь) — ▶/■ в строках.
+    const clicking = opts.playingClick()
+    if (clicking !== wasClicking) {
+      wasClicking = clicking
+      render()
+    }
+    if (engine.isPlaying && !songPlaying()) return
     if (engine.isPlaying) pendingStart = false
-    if (engine.isPlaying !== wasPlaying) {
+    if (songPlaying() !== wasPlaying) {
       // Остановилась не нашей кнопкой — песня доиграла: следующая готова.
       const ended = wasPlaying && !stoppedHere
-      wasPlaying = engine.isPlaying
+      wasPlaying = songPlaying()
       stoppedHere = false
       if (ended) {
         const index = indexOfCurrent()
@@ -392,7 +444,7 @@ export function mountConcertScreen(container: HTMLElement, engine: AudioEngine, 
       render()
       return
     }
-    if (!engine.isPlaying) return
+    if (!songPlaying()) return
     const song = currentSong()
     const pos = song ? positionOf(song, playback) : null
     if (!song || !pos) return

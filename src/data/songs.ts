@@ -172,7 +172,15 @@ export function normalizeSong(input: unknown): Song {
     sections: rawSections.flatMap((sec, i) => (sec.intro ? [] : [normalizeSection(sec, i, usedIds)])),
     pattern: normalizeSongPattern(raw.pattern),
     ...readOrder(raw.order),
+    ...(typeof raw.comment === 'string' && raw.comment.trim() ? { comment: raw.comment.slice(0, CONFIG.MAX_COMMENT_LENGTH) } : {}),
   }
+}
+
+/** Песня с новым комментарием (список плейлиста): пустой — поля нет. */
+export function withSongComment(song: Song, text: string): Song {
+  const { comment: _comment, ...rest } = song
+  const comment = text.trim().slice(0, CONFIG.MAX_COMMENT_LENGTH)
+  return comment ? { ...rest, comment } : rest
 }
 
 export function songMeter(song: Song): Meter {

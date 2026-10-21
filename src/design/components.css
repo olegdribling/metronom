@@ -1214,31 +1214,59 @@
 }
 
 /* Выбор песни: строка — кнопка; выбранная — жёлтая. */
+/* Песня в «Списке»: строка (тап — выбрать) и крупная ▶ справа — щелчок
+   метронома в темпе песни (временное решение пользователя); играет — ■
+   жёлтая. */
+.concert__song-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--concert-border);
+}
 .concert__song-row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-4) 0;
+  padding: var(--space-2) 0;
   border: none;
-  border-bottom: 1px solid var(--concert-border);
   background: transparent;
   color: var(--concert-text);
   text-align: left;
   cursor: pointer;
 }
-.concert__song-row--current { color: var(--concert-accent); }
-.concert__song-row-name {
+.concert__song-item--current .concert__song-row { color: var(--concert-accent); }
+.concert__song-play,
+.concert__song-play.concert__btn--main {
+  flex: none;
+  width: clamp(64px, 17vmin, 110px);
+  height: clamp(64px, 17vmin, 110px);
+}
+/* Название и под ним комментарий к песне. */
+.concert__song-row-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.concert__song-row-name {
   font-size: clamp(1.5rem, 7vmin, 3rem);
   font-weight: var(--font-weight-black);
+  overflow-wrap: anywhere;
+}
+.concert__song-row-comment {
+  color: var(--concert-text-sub);
+  font-size: clamp(0.875rem, 3.75vmin, 1.375rem);
+  font-weight: var(--font-weight-regular);
   overflow-wrap: anywhere;
 }
 .concert__song-row-bpm {
   flex: none;
   color: var(--concert-text-sub);
-  font-size: clamp(1rem, 4.5vmin, 1.75rem);
+  font-size: clamp(0.875rem, 3.5vmin, 1.25rem);
   font-weight: var(--font-weight-bold);
 }
 .concert__message {

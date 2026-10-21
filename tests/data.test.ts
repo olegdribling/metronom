@@ -21,11 +21,12 @@ import {
   spreadLinked,
   squaresTarget,
   squareContent,
+  withSongComment,
   withSongMeter,
 } from '../src/data/songs.ts'
 import { engineSettingsFor, playSong, sameSource, songForEngine } from '../src/data/engineSettings.ts'
 import { resolveSongForEngine } from '../src/data/resolveBeat.ts'
-import { moveItem, moveShown, orderedFirst, withOrderOf } from '../src/data/order.ts'
+import { moveItem, moveShown, orderedFirst, withListFieldsOf } from '../src/data/order.ts'
 import { stableStringify } from '../src/data/docSync.ts'
 import { Beat, Song } from '../src/types.ts'
 
@@ -253,6 +254,19 @@ test('метроном: BPM — скорость каждой точки, дви
   assert.equal(s.bpm, 30, '120 точек в минуту при 4 точках на долю — 30 долей в минуту')
   assert.deepEqual([s.beatsPerBar, s.beatDivision, s.voiceCount, s.voiceCues], [4, 4, true, false])
   assert.equal(s.content, null, 'метроном — щелчок, без песни')
+})
+
+test('▶ у песни в «Концерте»: метроном как есть, только темп — песни (как 120 на метрономе)', () => {
+  const song: Song = { ...createEmptySong('s'), bpm: 100, beatsPerBar: 3, beatDivision: 2 }
+  const pattern = { ...emptySongPattern(), id: 'metronome-pattern', steps: 2, beatsPerBar: 1, beatDivision: 2, tracks: [{ role: 'kick' as const, steps: [true, false] }] }
+  const inputs = { metronome, metronomePattern: pattern, songs: [song], beats: [], voiceCues: true }
+  const click = engineSettingsFor({ kind: 'songClick', songId: song.id }, inputs)!
+  assert.equal(click.bpm, 25, '100 у песни — 100 точек в минуту при 4 точках на долю')
+  assert.deepEqual([click.beatsPerBar, click.beatDivision, click.voiceCount, click.voiceCues], [4, 4, true, false], 'размер и голос — метронома, не песни')
+  assert.equal(click.content, null, 'щелчок, а не песня')
+  const withPattern = engineSettingsFor({ kind: 'songClick', songId: song.id }, { ...inputs, metronome: { ...metronome, usePattern: true, patternSpeed: 2 } })!
+  assert.deepEqual(withPattern.content, { beat: pattern, speed: 2 }, 'свой паттерн метронома и его скорость')
+  assert.equal(engineSettingsFor({ kind: 'songClick', songId: 404 }, inputs), null, 'песни нет — играть нечего')
 })
 
 test('песня и бит — со своими темпом и размером, метроном на них не влияет', () => {
@@ -509,8 +523,18 @@ test('перестановка — по id: список на экране и в
   assert.equal(moveShown(shown.filter((i) => i.id !== 3), shown, 0, 2), null, 'той, к которой отпустили, уже нет — ничего')
 })
 
-test('дискета не трогает место в списке: его могли переставить с другого устройства', () => {
-  const stored = { id: 1, name: 'Сохранённая', order: 3 }
-  assert.deepEqual(withOrderOf({ id: 1, name: 'Правка', order: 0 }, stored), { id: 1, name: 'Правка', order: 3 })
-  assert.equal('order' in withOrderOf({ id: 1, name: 'Правка', order: 0 }, { id: 1, name: 'Сохранённая' }), false)
+test('дискета не трогает место и комментарий в списке: их могли поменять с другого устройства', () => {
+  const stored = { id: 1, name: 'Сохранённая', order: 3, comment: 'новый' }
+  assert.deepEqual(withListFieldsOf({ id: 1, name: 'Правка', order: 0, comment: 'старый' }, stored), { id: 1, name: 'Правка', order: 3, comment: 'новый' })
+  const plain = withListFieldsOf({ id: 1, name: 'Правка', order: 0, comment: 'старый' }, { id: 1, name: 'Сохранённая' })
+  assert.equal('order' in plain || 'comment' in plain, false)
+})
+
+test('комментарий к песне: одна заметка, пустого нет', () => {
+  const song = createEmptySong('s')
+  assert.equal(withSongComment(song, '  начинаем с припева  ').comment, 'начинаем с припева')
+  assert.equal('comment' in withSongComment({ ...song, comment: 'был' }, '   '), false, 'стёрли — поля нет')
+  assert.equal(withSongComment(song, 'x'.repeat(500)).comment?.length, 200)
+  assert.equal(normalizeSong({ id: 1, comment: 'строй ниже' }).comment, 'строй ниже', 'хранится')
+  assert.equal('comment' in normalizeSong({ id: 1, comment: '  ' }), false)
 })

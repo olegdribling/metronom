@@ -256,13 +256,43 @@ export function startApp(root: HTMLElement): void {
     mountScreen((c) => mountBeatEditorScreen(c, metronomePatternTarget(), engine, null))
   })
 
+  // ▶ у песни — в списке плейлиста и в «Списке» «Концерта» (временное
+  // решение пользователя): играет метроном как есть, только в темпе песни
+  // (источник songClick), без отсчёта; ■ — стоп, ▶ другой песни —
+  // переключиться. Как ▶ у бита в «Битах»: меняется только activeSource,
+  // звук страницы — прежний; остановили — источник снова он (Play «Концерта»
+  // играет выбранную песню, а не щелчок).
+  const playingSongClick = (): number | null => (engine.isPlaying && activeSource.kind === 'songClick' ? activeSource.songId : null)
+  function stopSongClick() {
+    if (activeSource.kind !== 'songClick') return
+    if (engine.isPlaying) engine.stop()
+    if (pageSource) {
+      activeSource = pageSource
+      engineContent = undefined
+      syncEngine()
+    }
+  }
+  function toggleSongClick(songId: number): Promise<void> {
+    if (playingSongClick() === songId) {
+      stopSongClick()
+      return Promise.resolve()
+    }
+    if (engine.isPlaying) engine.stop()
+    activeSource = { kind: 'songClick', songId }
+    engineContent = undefined
+    syncEngine()
+    return engine.start()
+  }
+
   router.on('/playlist', () => {
     enterPage(null)
     setScreen('playlist', () => 'Плейлист', { lock: true })
     mountScreen((c) =>
-      mountPlaylistScreen(c, {
+      mountPlaylistScreen(c, engine, {
         onOpenSong: (songId) => router.navigate(`/song/${songId}`),
         onOpenConcert: () => router.navigate('/concert'),
+        playingClick: playingSongClick,
+        onToggleClick: toggleSongClick,
       })
     )
   })
@@ -284,6 +314,9 @@ export function startApp(root: HTMLElement): void {
           if (current) concertSong = { playlistId: current, songId }
           setPageSource({ kind: 'concert', songId })
         },
+        playingClick: playingSongClick,
+        onToggleClick: toggleSongClick,
+        onStopClick: stopSongClick,
         onExit: () => router.navigate('/playlist'),
       })
     )

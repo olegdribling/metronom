@@ -31,12 +31,20 @@ export function moveShown<T extends { id: string | number; order?: number }>(ite
   return a < 0 || b < 0 ? null : moveItem(items, a, b)
 }
 
-/** Место в списке — не правка песни или бита: дискета черновика его не
- * трогает (переставили с другого устройства, пока правили, — старое место
+// Правятся в списке, а не на странице песни или бита: место (order) и
+// комментарий песни (comment).
+const LIST_FIELDS = ['order', 'comment'] as const
+
+/** Поля списка — не правка песни или бита: дискета черновика их не трогает
+ * (переставили или подписали с другого устройства, пока правили, — старое
  * не возвращается). */
-export function withOrderOf<T extends { order?: number }>(edited: T, stored: T): T {
-  const { order: _order, ...rest } = edited
-  return (stored.order === undefined ? rest : { ...rest, order: stored.order }) as T
+export function withListFieldsOf<T extends { order?: number; comment?: string }>(edited: T, stored: T): T {
+  const next: Record<string, unknown> = { ...edited }
+  for (const key of LIST_FIELDS) {
+    if (stored[key] === undefined) delete next[key]
+    else next[key] = stored[key]
+  }
+  return next as T
 }
 
 /** Порядок из БД: целое число или ничего. */

@@ -39,10 +39,18 @@ export function playSong(engine: Pick<AudioEngine, 'start' | 'stop' | 'isPlaying
   return engine.start({ fromBar, countInBars: CONFIG.COUNT_IN_BARS })
 }
 
+/** ▶ у песни (список плейлиста, «Концерт»): простому щелчку сэмплы не
+ * нужны, голосу и своему паттерну метронома — нужны. */
+export const clickNeedsSamples = (m: MetronomeSettings, pattern: Beat | null): boolean => m.voiceCount || (m.usePattern && !!pattern)
+
 /** null — играть нечего: песня или бит ещё не пришли из БД или удалены. */
 export function engineSettingsFor(source: PlaybackSource, inputs: EngineInputs): EngineSettings | null {
-  if (source.kind === 'metronome' || source.kind === 'metronomePattern') {
-    const m = inputs.metronome
+  if (source.kind === 'metronome' || source.kind === 'metronomePattern' || source.kind === 'songClick') {
+    // ▶ у песни в «Концерте» — метроном с темпом песни: 120 у песни — как 120
+    // на метрономе (скорость каждой точки), решение пользователя.
+    const clickSong = source.kind === 'songClick' ? inputs.songs.find((s) => s.id === source.songId) : undefined
+    if (source.kind === 'songClick' && !clickSong) return null
+    const m = clickSong ? { ...inputs.metronome, bpm: clickSong.bpm } : inputs.metronome
     // «Свой паттерн» (решение пользователя): метроном остаётся собой —
     // скорость, размер, кольцо его; вместо щелчка по кругу играет паттерн.
     // Доля паттерна = доля метронома: паттерн N/M занимает N долей, его M
